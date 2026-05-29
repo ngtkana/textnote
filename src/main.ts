@@ -7,10 +7,21 @@ let currentFiles: TextFile[] = [];
 let saveTimeouts = new Map<string, number>();
 let currentFileIndex = 0;
 let swipeDetector: SwipeDetector | null = null;
+let lastViewportWidth = window.innerWidth;
 
 // モバイル判定
 function isMobile(): boolean {
   return window.innerWidth < 768;
+}
+
+// ビューポート幅が実際に変わったか（キーボード表示によるリサイズを無視）
+function hasViewportWidthChanged(): boolean {
+  const currentWidth = window.innerWidth;
+  const changed = Math.abs(currentWidth - lastViewportWidth) > 50; // 50px以上変化した場合のみ
+  if (changed) {
+    lastViewportWidth = currentWidth;
+  }
+  return changed;
 }
 
 // アプリケーション初期化
@@ -41,8 +52,15 @@ async function init() {
     // UIレンダリング
     render();
 
-    // リサイズ時に再描画
-    window.addEventListener('resize', debounce(render, 300));
+    // リサイズ時に再描画（ただし幅が大きく変わった場合のみ）
+    window.addEventListener(
+      'resize',
+      debounce(() => {
+        if (hasViewportWidthChanged()) {
+          render();
+        }
+      }, 300)
+    );
   } catch (error) {
     console.error('初期化エラー:', error);
     app.innerHTML = `
@@ -60,6 +78,12 @@ async function init() {
 function render() {
   const app = document.querySelector<HTMLDivElement>('#app')!;
 
+  // 現在フォーカス中の要素を保存
+  const activeElement = document.activeElement as HTMLElement;
+  const activeFileId = activeElement?.dataset?.fileId;
+  const isTextarea = activeElement?.classList?.contains('file-content-textarea');
+  const isTitleInput = activeElement?.classList?.contains('file-title-input');
+
   if (isMobile()) {
     renderMobileView(app);
   } else {
@@ -67,6 +91,20 @@ function render() {
   }
 
   setupEventListeners();
+
+  // フォーカスを復元
+  if (activeFileId && (isTextarea || isTitleInput)) {
+    const selector = isTextarea
+      ? `.file-content-textarea[data-file-id="${activeFileId}"]`
+      : `.file-title-input[data-file-id="${activeFileId}"]`;
+    const element = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement;
+    if (element) {
+      element.focus();
+      // カーソル位置を最後に移動
+      const length = element.value.length;
+      element.setSelectionRange(length, length);
+    }
+  }
 }
 
 // モバイルビュー（1画面1ファイル + スワイプ）
