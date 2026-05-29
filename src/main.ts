@@ -143,6 +143,32 @@ function renderSyncStatus(): string {
   return '<div id="sync-status-container"></div>';
 }
 
+// アカウントアイコンをレンダリング
+function renderAccountIcon(): string {
+  if (!isLoggedIn || !currentUser) return '';
+
+  if (currentUser.photoURL) {
+    return `<img src="${escapeHtml(currentUser.photoURL)}" alt="アカウント" class="w-8 h-8 rounded-full border border-gray-300" />`;
+  }
+
+  return '<div id="account-icon-container" class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center"></div>';
+}
+
+// アカウントアイコン（デフォルト）を動的に描画
+function updateAccountIconDisplay() {
+  const iconContainer = document.getElementById('account-icon-container');
+  if (!iconContainer) return;
+
+  iconContainer.innerHTML = '';
+
+  const iconSvg = createElement(User);
+  iconSvg.setAttribute('width', '16');
+  iconSvg.setAttribute('height', '16');
+  iconSvg.classList.add('w-4', 'h-4', 'text-gray-600');
+
+  iconContainer.appendChild(iconSvg);
+}
+
 // アプリケーション初期化
 async function init() {
   const app = document.querySelector<HTMLDivElement>('#app');
@@ -166,19 +192,19 @@ async function init() {
     syncService.setStatusCallback(setSyncStatus);
 
     // Firebase リダイレクト結果を確認（モバイルログイン後）
-    console.log('[init] getRedirectResult 開始');
     try {
       const result = await getRedirectResult(auth);
       if (result) {
         // リダイレクトログイン成功
-        console.log('[init] リダイレクトログイン成功:', result.user.email);
       } else {
         console.log('[init] リダイレクト結果なし（通常起動）');
       }
-    } catch (error: any) {
+    } catch (error) {
       console.error('[init] リダイレクトログインエラー:', error);
+      const errorMessage = error instanceof Error ? error.message : '不明なエラー';
+      const errorCode = (error as { code?: string }).code || 'unknown';
       alert(
-        `リダイレクトログインエラー\n\nエラーコード: ${error.code}\nメッセージ: ${error.message}`
+        `リダイレクトログインエラー\n\nエラーコード: ${errorCode}\nメッセージ: ${errorMessage}`
       );
     }
 
@@ -342,6 +368,9 @@ function render() {
 
   // 同期ステータスを初期表示
   updateSyncStatusDisplay();
+
+  // アカウントアイコンを初期表示
+  updateAccountIconDisplay();
 }
 
 // モバイルビュー（1画面1ファイル + スワイプ）
@@ -359,6 +388,7 @@ function renderMobileView(app: HTMLDivElement) {
           <div class="flex items-center justify-between">
             <h1 class="text-xl font-bold">TextNote</h1>
             <div class="flex gap-2 items-center">
+              ${renderAccountIcon()}
               ${renderSyncStatus()}
               <button id="add-file" class="btn btn-primary text-sm">+</button>
               <button id="menu-btn" class="btn text-sm">
@@ -559,16 +589,7 @@ function renderDesktopView(app: HTMLDivElement) {
         <div class="max-w-7xl mx-auto flex items-center justify-between">
           <h1 class="text-xl font-bold">TextNote</h1>
           <div class="flex gap-2 items-center">
-            ${
-              isLoggedIn
-                ? `
-              <span class="text-xs text-text-secondary flex items-center gap-1">
-                <i data-lucide="check-circle" class="w-3 h-3"></i>
-                ${currentUser?.displayName || currentUser?.email || 'ログイン中'}
-              </span>
-            `
-                : ''
-            }
+            ${renderAccountIcon()}
             ${renderSyncStatus()}
             <button id="add-file" class="btn btn-primary text-sm">
               + 新規ファイル
@@ -862,9 +883,11 @@ function setupEventListeners() {
         console.log('[login-btn] signInWithPopup 完了:', result.user.email);
       }
       // onAuthStateChangedで自動的に同期とレンダリングが行われる
-    } catch (error: any) {
+    } catch (error) {
       console.error('[login-btn] ログインエラー:', error);
-      alert(`ログインに失敗しました\n\nエラー: ${error.code || error.message}\n\n詳細: ${JSON.stringify(error)}`);
+      const errorMessage = error instanceof Error ? error.message : '不明なエラー';
+      const errorCode = (error as { code?: string }).code || '';
+      alert(`ログインに失敗しました\n\nエラー: ${errorCode || errorMessage}`);
     }
   });
 
@@ -907,7 +930,7 @@ function formatDate(timestamp: number): string {
   return date.toLocaleDateString('ja-JP');
 }
 
-function debounce<T extends (...args: any[]) => void>(
+function debounce<T extends (...args: never[]) => void>(
   func: T,
   wait: number
 ): (...args: Parameters<T>) => void {
