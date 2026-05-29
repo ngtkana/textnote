@@ -12,7 +12,17 @@ import {
   signOut,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { createIcons, User, LogOut, CheckCircle, Menu, Download, Upload } from 'lucide';
+import {
+  createIcons,
+  User,
+  LogOut,
+  CheckCircle,
+  Menu,
+  Download,
+  Upload,
+  Loader2,
+  AlertCircle,
+} from 'lucide';
 
 let currentFiles: TextFile[] = [];
 let saveTimeouts = new Map<string, number>();
@@ -102,8 +112,14 @@ function updateSyncStatusDisplay() {
     </div>
   `;
 
-  // アイコンを再初期化
-  createIcons();
+  // アイコンを再初期化（同期ステータス用のアイコン）
+  createIcons({
+    icons: {
+      Loader2,
+      CheckCircle,
+      AlertCircle,
+    },
+  });
 }
 
 // 同期状態インジケーターのコンテナをレンダリング
