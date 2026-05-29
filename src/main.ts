@@ -37,6 +37,31 @@ let isMenuOpen = false;
 let syncStatus: 'idle' | 'syncing' | 'success' | 'error' = 'idle';
 let syncErrorMessage = '';
 let syncStatusTimeout: number | null = null;
+let debugLogs: string[] = [];
+const MAX_DEBUG_LOGS = 20;
+
+// デバッグログを追加
+function addDebugLog(message: string) {
+  const timestamp = new Date().toLocaleTimeString('ja-JP');
+  debugLogs.push(`${timestamp} ${message}`);
+  if (debugLogs.length > MAX_DEBUG_LOGS) {
+    debugLogs.shift();
+  }
+  updateDebugLogDisplay();
+  console.log(message);
+}
+
+// デバッグログ表示を更新
+function updateDebugLogDisplay() {
+  const debugPanel = document.getElementById('debug-panel');
+  if (!debugPanel) return;
+
+  debugPanel.innerHTML = debugLogs
+    .slice()
+    .reverse()
+    .map((log) => `<div class="text-xs font-mono">${escapeHtml(log)}</div>`)
+    .join('');
+}
 
 // モバイル判定
 function isMobile(): boolean {
@@ -194,19 +219,20 @@ async function init() {
     syncService.setStatusCallback(setSyncStatus);
 
     // Firebase リダイレクト結果を確認（モバイルログイン後）
-    console.log('[init] getRedirectResult 開始');
+    addDebugLog('[init] getRedirectResult 開始');
     try {
       const result = await getRedirectResult(auth);
-      console.log('[init] getRedirectResult 結果:', result);
+      addDebugLog(`[init] getRedirectResult 結果: ${result ? 'あり' : 'なし'}`);
       if (result) {
-        console.log('[init] リダイレクトログイン成功:', result.user.email);
+        addDebugLog(`[init] リダイレクトログイン成功: ${result.user.email}`);
       } else {
-        console.log('[init] リダイレクト結果なし（通常起動）');
+        addDebugLog('[init] リダイレクト結果なし（通常起動）');
       }
     } catch (error) {
-      console.error('[init] リダイレクトログインエラー:', error);
       const errorMessage = error instanceof Error ? error.message : '不明なエラー';
       const errorCode = (error as { code?: string }).code || 'unknown';
+      addDebugLog(`[init] エラー: ${errorCode} - ${errorMessage}`);
+      console.error('[init] リダイレクトログインエラー:', error);
       alert(
         `リダイレクトログインエラー\n\nエラーコード: ${errorCode}\nメッセージ: ${errorMessage}`
       );
@@ -443,6 +469,12 @@ function renderMobileView(app: HTMLDivElement) {
         <div class="flex-1 flex items-center justify-center text-text-secondary px-4 text-center">
           ファイルがありません。<br>「+」から作成してください。
         </div>
+
+        <!-- デバッグパネル -->
+        <div class="fixed bottom-0 left-0 right-0 bg-black bg-opacity-90 text-white p-2 max-h-40 overflow-y-auto z-50">
+          <div class="text-xs font-bold mb-1">デバッグログ:</div>
+          <div id="debug-panel"></div>
+        </div>
       </div>
     `;
     return;
@@ -566,6 +598,12 @@ function renderMobileView(app: HTMLDivElement) {
         `
             : ''
         }
+      </div>
+
+      <!-- デバッグパネル -->
+      <div class="fixed bottom-0 left-0 right-0 bg-black bg-opacity-90 text-white p-2 max-h-40 overflow-y-auto z-50">
+        <div class="text-xs font-bold mb-1">デバッグログ:</div>
+        <div id="debug-panel"></div>
       </div>
     </div>
   `;
@@ -693,6 +731,12 @@ function renderDesktopView(app: HTMLDivElement) {
         </div>
 
         ${currentFiles.length === 0 ? '<div class="text-center text-text-secondary mt-8">ファイルがありません。「+ 新規ファイル」から作成してください。</div>' : ''}
+      </div>
+
+      <!-- デバッグパネル -->
+      <div class="fixed bottom-0 left-0 right-0 bg-black bg-opacity-90 text-white p-2 max-h-40 overflow-y-auto z-50">
+        <div class="text-xs font-bold mb-1">デバッグログ:</div>
+        <div id="debug-panel"></div>
       </div>
     </div>
   `;
@@ -883,24 +927,25 @@ function setupEventListeners() {
   // ログイン
   document.getElementById('login-btn')?.addEventListener('click', async () => {
     try {
-      console.log('[login-btn] ログインボタンクリック');
+      addDebugLog('[login-btn] ログインボタンクリック');
       const provider = new GoogleAuthProvider();
 
       // モバイルではリダイレクト、デスクトップではポップアップ
       if (isMobile()) {
-        console.log('[login-btn] モバイル検出: signInWithRedirect 実行');
+        addDebugLog('[login-btn] モバイル検出: signInWithRedirect 実行');
         await signInWithRedirect(auth, provider);
-        console.log('[login-btn] signInWithRedirect 完了（リダイレクト開始）');
+        addDebugLog('[login-btn] signInWithRedirect 完了（リダイレクト開始）');
       } else {
-        console.log('[login-btn] デスクトップ検出: signInWithPopup 実行');
+        addDebugLog('[login-btn] デスクトップ検出: signInWithPopup 実行');
         const result = await signInWithPopup(auth, provider);
-        console.log('[login-btn] signInWithPopup 完了:', result.user.email);
+        addDebugLog(`[login-btn] signInWithPopup 完了: ${result.user.email}`);
       }
       // onAuthStateChangedで自動的に同期とレンダリングが行われる
     } catch (error) {
-      console.error('[login-btn] ログインエラー:', error);
       const errorMessage = error instanceof Error ? error.message : '不明なエラー';
       const errorCode = (error as { code?: string }).code || '';
+      addDebugLog(`[login-btn] エラー: ${errorCode || errorMessage}`);
+      console.error('[login-btn] ログインエラー:', error);
       alert(`ログインに失敗しました\n\nエラー: ${errorCode || errorMessage}`);
     }
   });
