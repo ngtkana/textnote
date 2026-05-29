@@ -41,21 +41,55 @@ let syncStatusTimeout: number | null = null;
 let debugLogs: string[] = [];
 const MAX_DEBUG_LOGS = 20;
 
-// デバッグログを追加
+// デバッグログを追加（localStorageに保存）
 function addDebugLog(message: string) {
   const timestamp = new Date().toLocaleTimeString('ja-JP');
-  debugLogs.push(`${timestamp} ${message}`);
+  const logEntry = `${timestamp} ${message}`;
+  debugLogs.push(logEntry);
   if (debugLogs.length > MAX_DEBUG_LOGS) {
     debugLogs.shift();
   }
+
+  // localStorageに保存（リダイレクト後も残る）
+  try {
+    window.localStorage.setItem('debug-logs', JSON.stringify(debugLogs));
+  } catch (e) {
+    console.error('localStorage書き込みエラー:', e);
+  }
+
   updateDebugLogDisplay();
   console.log(message);
+}
+
+// デバッグログをlocalStorageから読み込み
+function loadDebugLogs() {
+  try {
+    const saved = window.localStorage.getItem('debug-logs');
+    if (saved) {
+      debugLogs = JSON.parse(saved);
+      updateDebugLogDisplay();
+    }
+  } catch (e) {
+    console.error('localStorage読み込みエラー:', e);
+  }
+}
+
+// デバッグログをクリア
+function clearDebugLogs() {
+  debugLogs = [];
+  window.localStorage.removeItem('debug-logs');
+  updateDebugLogDisplay();
 }
 
 // デバッグログ表示を更新
 function updateDebugLogDisplay() {
   const debugPanel = document.getElementById('debug-panel');
   if (!debugPanel) return;
+
+  if (debugLogs.length === 0) {
+    debugPanel.innerHTML = '<div class="text-xs text-gray-400">ログなし</div>';
+    return;
+  }
 
   debugPanel.innerHTML = debugLogs
     .slice()
@@ -204,6 +238,9 @@ async function init() {
   if (!app) {
     throw new Error('App element not found');
   }
+
+  // デバッグログを復元（リダイレクト前のログを表示）
+  loadDebugLogs();
 
   // 初期化中表示
   app.innerHTML = `
@@ -476,7 +513,10 @@ function renderMobileView(app: HTMLDivElement) {
 
         <!-- デバッグパネル -->
         <div class="fixed bottom-0 left-0 right-0 bg-black bg-opacity-90 text-white p-2 max-h-40 overflow-y-auto z-50">
-          <div class="text-xs font-bold mb-1">デバッグログ:</div>
+          <div class="flex justify-between items-center mb-1">
+            <div class="text-xs font-bold">デバッグログ:</div>
+            <button id="clear-debug-logs" class="text-xs bg-red-600 hover:bg-red-700 px-2 py-1 rounded">クリア</button>
+          </div>
           <div id="debug-panel"></div>
         </div>
       </div>
@@ -608,7 +648,10 @@ function renderMobileView(app: HTMLDivElement) {
 
       <!-- デバッグパネル -->
       <div class="fixed bottom-0 left-0 right-0 bg-black bg-opacity-90 text-white p-2 max-h-40 overflow-y-auto z-50">
-        <div class="text-xs font-bold mb-1">デバッグログ:</div>
+        <div class="flex justify-between items-center mb-1">
+          <div class="text-xs font-bold">デバッグログ:</div>
+          <button id="clear-debug-logs" class="text-xs bg-red-600 hover:bg-red-700 px-2 py-1 rounded">クリア</button>
+        </div>
         <div id="debug-panel"></div>
       </div>
     </div>
@@ -742,7 +785,10 @@ function renderDesktopView(app: HTMLDivElement) {
 
       <!-- デバッグパネル -->
       <div class="fixed bottom-0 left-0 right-0 bg-black bg-opacity-90 text-white p-2 max-h-40 overflow-y-auto z-50">
-        <div class="text-xs font-bold mb-1">デバッグログ:</div>
+        <div class="flex justify-between items-center mb-1">
+          <div class="text-xs font-bold">デバッグログ:</div>
+          <button id="clear-debug-logs" class="text-xs bg-red-600 hover:bg-red-700 px-2 py-1 rounded">クリア</button>
+        </div>
         <div id="debug-panel"></div>
       </div>
     </div>
@@ -751,6 +797,11 @@ function renderDesktopView(app: HTMLDivElement) {
 
 // イベントリスナー設定
 function setupEventListeners() {
+  // デバッグログクリアボタン
+  document.getElementById('clear-debug-logs')?.addEventListener('click', () => {
+    clearDebugLogs();
+  });
+
   // メニューボタン
   document.getElementById('menu-btn')?.addEventListener('click', (e) => {
     e.stopPropagation();
