@@ -1,5 +1,7 @@
 import { storage } from '../lib/storage';
 import type { TextFile } from '../types';
+import { syncService } from './syncService';
+import { auth } from '../lib/firebase';
 
 // UUID生成（簡易版）
 function generateId(): string {
@@ -58,6 +60,12 @@ export class FileService {
     };
 
     await storage.createFile(newFile);
+
+    // クラウド同期（ログイン中のみ）
+    if (auth.currentUser) {
+      await syncService.saveFileToCloud(newFile);
+    }
+
     return newFile;
   }
 
@@ -70,6 +78,11 @@ export class FileService {
     file.updatedAt = Date.now();
 
     await storage.updateFile(file);
+
+    // クラウド同期（ログイン中のみ）
+    if (auth.currentUser) {
+      await syncService.saveFileToCloud(file);
+    }
   }
 
   // ファイルの内容を更新
@@ -81,11 +94,21 @@ export class FileService {
     file.updatedAt = Date.now();
 
     await storage.updateFile(file);
+
+    // クラウド同期（ログイン中のみ）
+    if (auth.currentUser) {
+      await syncService.saveFileToCloud(file);
+    }
   }
 
   // ファイルを削除
   async deleteFile(id: string): Promise<void> {
     await storage.deleteFile(id);
+
+    // クラウド同期（ログイン中のみ）
+    if (auth.currentUser) {
+      await syncService.deleteFileFromCloud(id);
+    }
 
     // 削除後、order を再計算
     await this.reorderFiles();
@@ -102,6 +125,11 @@ export class FileService {
       files[i].order = i;
       files[i].updatedAt = Date.now();
       await storage.updateFile(files[i]);
+
+      // クラウド同期（ログイン中のみ）
+      if (auth.currentUser) {
+        await syncService.saveFileToCloud(files[i]);
+      }
     }
   }
 

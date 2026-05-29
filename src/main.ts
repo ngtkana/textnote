@@ -1,13 +1,27 @@
 import './styles/tailwind.css';
 import { fileService } from './services/fileService';
+import { syncService } from './services/syncService';
 import { SwipeDetector } from './lib/gestures';
 import type { TextFile } from './types';
+import { auth } from './lib/firebase';
+import {
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  GoogleAuthProvider,
+  signOut,
+  onAuthStateChanged,
+} from 'firebase/auth';
+import { createIcons, User, LogOut, CheckCircle } from 'lucide';
 
 let currentFiles: TextFile[] = [];
 let saveTimeouts = new Map<string, number>();
 let currentFileIndex = 0;
 let swipeDetector: SwipeDetector | null = null;
 let lastViewportWidth = window.innerWidth;
+let isLoggedIn = false;
+let currentUser: { displayName: string | null; email: string | null; photoURL: string | null } | null =
+  null;
 
 // モバイル判定
 function isMobile(): boolean {
@@ -43,11 +57,59 @@ async function init() {
   `;
 
   try {
+    // Firebase リダイレクト結果を確認（モバイルログイン後）
+    try {
+      const result = await getRedirectResult(auth);
+      if (result) {
+        // リダイレクトログイン成功
+        console.log('リダイレクトログイン成功:', result.user.email);
+      }
+    } catch (error: any) {
+      console.error('リダイレクトログインエラー:', error);
+      alert(
+        `リダイレクトログインエラー\n\nエラーコード: ${error.code}\nメッセージ: ${error.message}`
+      );
+    }
+
     // FileServiceの初期化（IndexedDB初期化 + デフォルトデータ作成）
     await fileService.init();
 
     // データを取得
     currentFiles = await fileService.getAllFiles();
+
+    // Firebase認証状態の監視
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        isLoggedIn = true;
+        currentUser = {
+          displayName: user.displayName,
+          email: user.email,
+          photoURL: user.photoURL,
+        };
+
+        // ログイン時、クラウドから同期
+        try {
+          await syncService.syncFromCloud();
+          currentFiles = await fileService.getAllFiles();
+        } catch (error) {
+          console.error('クラウド同期エラー:', error);
+        }
+
+        // リアルタイム同期を開始
+        syncService.enableRealtimeSync(async () => {
+          currentFiles = await fileService.getAllFiles();
+          render();
+        });
+      } else {
+        isLoggedIn = false;
+        currentUser = null;
+
+        // ログアウト時、リアルタイム同期を停止
+        syncService.disableRealtimeSync();
+      }
+
+      render();
+    });
 
     // UIレンダリング
     render();
@@ -92,6 +154,15 @@ function render() {
 
   setupEventListeners();
 
+  // Lucideアイコンを初期化
+  createIcons({
+    icons: {
+      User,
+      LogOut,
+      CheckCircle,
+    },
+  });
+
   // フォーカスを復元
   if (activeFileId && (isTextarea || isTitleInput)) {
     const selector = isTextarea
@@ -122,7 +193,13 @@ function renderMobileView(app: HTMLDivElement) {
           <div class="flex items-center justify-between">
             <h1 class="text-xl font-bold">TextNote</h1>
             <div class="flex gap-2">
+              ${
+                isLoggedIn
+                  ? `<button id="logout-btn" class="btn text-xs" title="ログアウト"><i data-lucide="log-out" class="w-4 h-4"></i></button>`
+                  : `<button id="login-btn" class="btn text-xs" title="ログイン"><i data-lucide="user" class="w-4 h-4"></i></button>`
+              }
               <button id="add-file" class="btn btn-primary text-sm">+</button>
+              <button id="import-data" class="btn text-sm">⤴</button>
               <button id="export-data" class="btn text-sm">⤓</button>
             </div>
           </div>
@@ -152,6 +229,11 @@ function renderMobileView(app: HTMLDivElement) {
         <div class="flex items-center justify-between">
           <h1 class="text-xl font-bold">TextNote</h1>
           <div class="flex gap-2">
+            ${
+              isLoggedIn
+                ? `<button id="logout-btn" class="btn text-xs" title="ログアウト"><i data-lucide="log-out" class="w-4 h-4"></i></button>`
+                : `<button id="login-btn" class="btn text-xs" title="ログイン"><i data-lucide="user" class="w-4 h-4"></i></button>`
+            }
             <button id="add-file" class="btn btn-primary text-sm">+</button>
             <button id="import-data" class="btn text-sm">⤴</button>
             <button id="export-data" class="btn text-sm">⤓</button>
@@ -245,7 +327,26 @@ function renderDesktopView(app: HTMLDivElement) {
       <header class="bg-surface border-b border-gray-200 px-4 py-3">
         <div class="max-w-7xl mx-auto flex items-center justify-between">
           <h1 class="text-xl font-bold">TextNote</h1>
-          <div class="flex gap-2">
+          <div class="flex gap-2 items-center">
+            ${
+              isLoggedIn
+                ? `
+              <span class="text-xs text-text-secondary flex items-center gap-1">
+                <i data-lucide="check-circle" class="w-3 h-3"></i>
+                ${currentUser?.displayName || currentUser?.email || 'ログイン中'}
+              </span>
+              <button id="logout-btn" class="btn text-sm flex items-center gap-1" title="ログアウト">
+                <i data-lucide="log-out" class="w-4 h-4"></i>
+                ログアウト
+              </button>
+            `
+                : `
+              <button id="login-btn" class="btn text-sm flex items-center gap-1" title="Googleでログイン">
+                <i data-lucide="user" class="w-4 h-4"></i>
+                ログイン
+              </button>
+            `
+            }
             <button id="add-file" class="btn btn-primary text-sm">
               + 新規ファイル
             </button>
@@ -459,6 +560,37 @@ function setupEventListeners() {
     a.download = `textnote-backup-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  });
+
+  // ログイン
+  document.getElementById('login-btn')?.addEventListener('click', async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+
+      // モバイルではリダイレクト、デスクトップではポップアップ
+      if (isMobile()) {
+        await signInWithRedirect(auth, provider);
+      } else {
+        await signInWithPopup(auth, provider);
+      }
+      // onAuthStateChangedで自動的に同期とレンダリングが行われる
+    } catch (error: any) {
+      console.error('ログインエラー:', error);
+      alert(`ログインに失敗しました\n\nエラー: ${error.code || error.message}\n\n詳細: ${JSON.stringify(error)}`);
+    }
+  });
+
+  // ログアウト
+  document.getElementById('logout-btn')?.addEventListener('click', async () => {
+    try {
+      if (confirm('ログアウトしますか？\nローカルデータは保持されます。')) {
+        await signOut(auth);
+        // onAuthStateChangedで自動的にレンダリングが行われる
+      }
+    } catch (error) {
+      console.error('ログアウトエラー:', error);
+      alert('ログアウトに失敗しました');
+    }
   });
 }
 
