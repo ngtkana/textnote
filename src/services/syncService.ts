@@ -13,8 +13,21 @@ import type { Unsubscribe } from 'firebase/firestore';
 import { storage } from '../lib/storage';
 import type { TextFile } from '../types';
 
+type SyncStatusCallback = (status: 'idle' | 'syncing' | 'success' | 'error', errorMessage?: string) => void;
+
 class SyncService {
   private unsubscribe: Unsubscribe | null = null;
+  private statusCallback: SyncStatusCallback | null = null;
+
+  setStatusCallback(callback: SyncStatusCallback | null): void {
+    this.statusCallback = callback;
+  }
+
+  private updateStatus(status: 'idle' | 'syncing' | 'success' | 'error', errorMessage = ''): void {
+    if (this.statusCallback) {
+      this.statusCallback(status, errorMessage);
+    }
+  }
 
   async syncToCloud(): Promise<void> {
     const user = auth.currentUser;
@@ -54,7 +67,15 @@ class SyncService {
     const user = auth.currentUser;
     if (!user) return;
 
-    await setDoc(doc(db, 'users', user.uid, 'files', file.id), file);
+    try {
+      this.updateStatus('syncing');
+      await setDoc(doc(db, 'users', user.uid, 'files', file.id), file);
+      this.updateStatus('success');
+    } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : 'クラウド保存に失敗しました';
+      this.updateStatus('error', errorMsg);
+      throw error;
+    }
   }
 
   async deleteFileFromCloud(fileId: string): Promise<void> {

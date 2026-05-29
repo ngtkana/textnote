@@ -23,6 +23,9 @@ let isLoggedIn = false;
 let currentUser: { displayName: string | null; email: string | null; photoURL: string | null } | null =
   null;
 let isMenuOpen = false;
+let syncStatus: 'idle' | 'syncing' | 'success' | 'error' = 'idle';
+let syncErrorMessage = '';
+let syncStatusTimeout: number | null = null;
 
 // モバイル判定
 function isMobile(): boolean {
@@ -37,6 +40,63 @@ function hasViewportWidthChanged(): boolean {
     lastViewportWidth = currentWidth;
   }
   return changed;
+}
+
+// 同期状態を更新
+function setSyncStatus(status: 'idle' | 'syncing' | 'success' | 'error', errorMessage = '') {
+  syncStatus = status;
+  syncErrorMessage = errorMessage;
+
+  if (syncStatusTimeout) {
+    clearTimeout(syncStatusTimeout);
+    syncStatusTimeout = null;
+  }
+
+  if (status === 'success') {
+    syncStatusTimeout = window.setTimeout(() => {
+      syncStatus = 'idle';
+      render();
+    }, 3000);
+  }
+
+  render();
+}
+
+// 同期状態インジケーターをレンダリング
+function renderSyncStatus(): string {
+  if (!isLoggedIn || syncStatus === 'idle') {
+    return '';
+  }
+
+  const statusConfig = {
+    syncing: {
+      icon: 'loader-2',
+      text: '同期中',
+      class: 'text-blue-600',
+      animate: 'animate-spin',
+    },
+    success: {
+      icon: 'check-circle',
+      text: '保存済み',
+      class: 'text-green-600',
+      animate: '',
+    },
+    error: {
+      icon: 'alert-circle',
+      text: 'エラー',
+      class: 'text-red-600',
+      animate: '',
+    },
+  };
+
+  const config = statusConfig[syncStatus];
+
+  return `
+    <div class="flex items-center gap-1 text-xs ${config.class}" ${syncStatus === 'error' ? `title="${escapeHtml(syncErrorMessage)}"` : ''}>
+      <i data-lucide="${config.icon}" class="w-3 h-3 ${config.animate}"></i>
+      <span class="hidden sm:inline">${config.text}</span>
+    </div>
+  `;
 }
 
 // アプリケーション初期化
@@ -58,6 +118,9 @@ async function init() {
   `;
 
   try {
+    // 同期状態更新コールバックを登録
+    syncService.setStatusCallback(setSyncStatus);
+
     // Firebase リダイレクト結果を確認（モバイルログイン後）
     try {
       const result = await getRedirectResult(auth);
@@ -205,7 +268,8 @@ function renderMobileView(app: HTMLDivElement) {
         <header class="bg-surface border-b border-gray-200 px-4 py-3 relative">
           <div class="flex items-center justify-between">
             <h1 class="text-xl font-bold">TextNote</h1>
-            <div class="flex gap-2">
+            <div class="flex gap-2 items-center">
+              ${renderSyncStatus()}
               <button id="add-file" class="btn btn-primary text-sm">+</button>
               <button id="menu-btn" class="btn text-sm">
                 <i data-lucide="menu" class="w-4 h-4"></i>
@@ -273,7 +337,8 @@ function renderMobileView(app: HTMLDivElement) {
       <header class="bg-surface border-b border-gray-200 px-4 py-3 relative">
         <div class="flex items-center justify-between">
           <h1 class="text-xl font-bold">TextNote</h1>
-          <div class="flex gap-2">
+          <div class="flex gap-2 items-center">
+            ${renderSyncStatus()}
             <button id="add-file" class="btn btn-primary text-sm">+</button>
             <button id="menu-btn" class="btn text-sm">
               <i data-lucide="menu" class="w-4 h-4"></i>
@@ -414,6 +479,7 @@ function renderDesktopView(app: HTMLDivElement) {
             `
                 : ''
             }
+            ${renderSyncStatus()}
             <button id="add-file" class="btn btn-primary text-sm">
               + 新規ファイル
             </button>
