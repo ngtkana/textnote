@@ -194,10 +194,12 @@ async function init() {
     syncService.setStatusCallback(setSyncStatus);
 
     // Firebase リダイレクト結果を確認（モバイルログイン後）
+    console.log('[init] getRedirectResult 開始');
     try {
       const result = await getRedirectResult(auth);
+      console.log('[init] getRedirectResult 結果:', result);
       if (result) {
-        // リダイレクトログイン成功
+        console.log('[init] リダイレクトログイン成功:', result.user.email);
       } else {
         console.log('[init] リダイレクト結果なし（通常起動）');
       }
