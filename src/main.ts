@@ -23,6 +23,7 @@ import {
   Upload,
   Loader2,
   AlertCircle,
+  Plus,
 } from 'lucide';
 
 let currentFiles: TextFile[] = [];
@@ -364,6 +365,7 @@ function render() {
       Menu,
       Download,
       Upload,
+      Plus,
     },
   });
 
@@ -419,7 +421,9 @@ function renderMobileView(app: HTMLDivElement) {
             <h1 class="text-xl font-bold">TextNote</h1>
             <div class="flex gap-2 items-center">
               ${renderSyncStatus()}
-              <button id="add-file" class="btn btn-primary text-sm">+</button>
+              <button id="add-file" class="btn btn-primary text-sm">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+              </button>
               ${
                 isLoggedIn
                   ? renderAccountIcon()
@@ -498,7 +502,9 @@ function renderMobileView(app: HTMLDivElement) {
           <h1 class="text-xl font-bold">TextNote</h1>
           <div class="flex gap-2 items-center">
             ${renderSyncStatus()}
-            <button id="add-file" class="btn btn-primary text-sm">+</button>
+            <button id="add-file" class="btn btn-primary text-sm">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+            </button>
             ${
               isLoggedIn
                 ? renderAccountIcon()
@@ -639,8 +645,9 @@ function renderDesktopView(app: HTMLDivElement) {
           <h1 class="text-xl font-bold">TextNote</h1>
           <div class="flex gap-2 items-center">
             ${renderSyncStatus()}
-            <button id="add-file" class="btn btn-primary text-sm">
-              + 新規ファイル
+            <button id="add-file" class="btn btn-primary text-sm flex items-center gap-1">
+              <i data-lucide="plus" class="w-4 h-4"></i>
+              <span>新規ファイル</span>
             </button>
             ${
               isLoggedIn
