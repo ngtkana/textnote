@@ -1,13 +1,28 @@
 import './styles/tailwind.css';
 import { fileService } from './services/fileService';
+import { syncService } from './services/syncService';
 import { SwipeDetector } from './lib/gestures';
 import type { TextFile } from './types';
+import { auth } from './lib/firebase';
+import {
+  signInWithPopup,
+  signInWithRedirect,
+  getRedirectResult,
+  GoogleAuthProvider,
+  signOut,
+  onAuthStateChanged,
+} from 'firebase/auth';
+import { createIcons, User, LogOut, CheckCircle, Menu, Download, Upload } from 'lucide';
 
 let currentFiles: TextFile[] = [];
 let saveTimeouts = new Map<string, number>();
 let currentFileIndex = 0;
 let swipeDetector: SwipeDetector | null = null;
 let lastViewportWidth = window.innerWidth;
+let isLoggedIn = false;
+let currentUser: { displayName: string | null; email: string | null; photoURL: string | null } | null =
+  null;
+let isMenuOpen = false;
 
 // モバイル判定
 function isMobile(): boolean {
@@ -43,11 +58,68 @@ async function init() {
   `;
 
   try {
+    // Firebase リダイレクト結果を確認（モバイルログイン後）
+    try {
+      const result = await getRedirectResult(auth);
+      if (result) {
+        // リダイレクトログイン成功
+        console.log('リダイレクトログイン成功:', result.user.email);
+      }
+    } catch (error: any) {
+      console.error('リダイレクトログインエラー:', error);
+      alert(
+        `リダイレクトログインエラー\n\nエラーコード: ${error.code}\nメッセージ: ${error.message}`
+      );
+    }
+
     // FileServiceの初期化（IndexedDB初期化 + デフォルトデータ作成）
     await fileService.init();
 
     // データを取得
     currentFiles = await fileService.getAllFiles();
+
+    // Firebase認証状態の監視
+    onAuthStateChanged(auth, async (user) => {
+      if (user) {
+        isLoggedIn = true;
+        currentUser = {
+          displayName: user.displayName,
+          email: user.email,
+          photoURL: user.photoURL,
+        };
+
+        // ログイン時、クラウドから同期
+        try {
+          const synced = await syncService.syncFromCloud();
+
+          // クラウドが空だった場合、ローカルをアップロード
+          if (!synced) {
+            const localFiles = await fileService.getAllFiles();
+            if (localFiles.length > 0) {
+              await syncService.syncToCloud();
+            }
+          }
+
+          currentFiles = await fileService.getAllFiles();
+        } catch (error) {
+          console.error('クラウド同期エラー:', error);
+        }
+
+        // リアルタイム同期を開始
+        syncService.enableRealtimeSync(async () => {
+          currentFiles = await fileService.getAllFiles();
+          render();
+        });
+      } else {
+        isLoggedIn = false;
+        currentUser = null;
+
+        // ログアウト時、リアルタイム同期を停止
+        syncService.disableRealtimeSync();
+      }
+
+      render();
+    });
 
     // UIレンダリング
     render();
@@ -92,6 +164,18 @@ function render() {
 
   setupEventListeners();
 
+  // Lucideアイコンを初期化
+  createIcons({
+    icons: {
+      User,
+      LogOut,
+      CheckCircle,
+      Menu,
+      Download,
+      Upload,
+    },
+  });
+
   // フォーカスを復元
   if (activeFileId && (isTextarea || isTitleInput)) {
     const selector = isTextarea
@@ -118,15 +202,53 @@ function renderMobileView(app: HTMLDivElement) {
   if (currentFiles.length === 0) {
     app.innerHTML = `
       <div class="min-h-screen bg-background flex flex-col">
-        <header class="bg-surface border-b border-gray-200 px-4 py-3">
+        <header class="bg-surface border-b border-gray-200 px-4 py-3 relative">
           <div class="flex items-center justify-between">
             <h1 class="text-xl font-bold">TextNote</h1>
             <div class="flex gap-2">
               <button id="add-file" class="btn btn-primary text-sm">+</button>
-              <button id="export-data" class="btn text-sm">⤓</button>
+              <button id="menu-btn" class="btn text-sm">
+                <i data-lucide="menu" class="w-4 h-4"></i>
+              </button>
             </div>
           </div>
+          ${
+            isMenuOpen
+              ? `
+          <div id="dropdown-menu" class="absolute right-4 top-14 bg-white border border-gray-200 rounded shadow-lg py-2 z-50 min-w-[180px]">
+            ${
+              isLoggedIn
+                ? `
+            <div class="px-4 py-2 border-b border-gray-200 text-xs text-text-secondary">
+              ${currentUser?.email || 'ログイン中'}
+            </div>
+            <button id="logout-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+              <i data-lucide="log-out" class="w-4 h-4"></i>
+              <span>ログアウト</span>
+            </button>
+            `
+                : `
+            <button id="login-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+              <i data-lucide="user" class="w-4 h-4"></i>
+              <span>ログイン</span>
+            </button>
+            `
+            }
+            <hr class="my-2">
+            <button id="export-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+              <i data-lucide="download" class="w-4 h-4"></i>
+              <span>エクスポート</span>
+            </button>
+            <button id="import-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+              <i data-lucide="upload" class="w-4 h-4"></i>
+              <span>インポート</span>
+            </button>
+          </div>
+          `
+              : ''
+          }
         </header>
+        <input type="file" id="import-file-input" accept=".json" style="display: none;" />
         <div class="flex-1 flex items-center justify-center text-text-secondary px-4 text-center">
           ファイルがありません。<br>「+」から作成してください。
         </div>
@@ -148,15 +270,53 @@ function renderMobileView(app: HTMLDivElement) {
   app.innerHTML = `
     <div class="min-h-screen bg-background flex flex-col">
       <!-- ヘッダー -->
-      <header class="bg-surface border-b border-gray-200 px-4 py-3">
+      <header class="bg-surface border-b border-gray-200 px-4 py-3 relative">
         <div class="flex items-center justify-between">
           <h1 class="text-xl font-bold">TextNote</h1>
           <div class="flex gap-2">
             <button id="add-file" class="btn btn-primary text-sm">+</button>
-            <button id="export-data" class="btn text-sm">⤓</button>
+            <button id="menu-btn" class="btn text-sm">
+              <i data-lucide="menu" class="w-4 h-4"></i>
+            </button>
           </div>
         </div>
+        ${
+          isMenuOpen
+            ? `
+        <div id="dropdown-menu" class="absolute right-4 top-14 bg-white border border-gray-200 rounded shadow-lg py-2 z-50 min-w-[180px]">
+          ${
+            isLoggedIn
+              ? `
+          <div class="px-4 py-2 border-b border-gray-200 text-xs text-text-secondary">
+            ${currentUser?.email || 'ログイン中'}
+          </div>
+          <button id="logout-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+            <span>ログアウト</span>
+          </button>
+          `
+              : `
+          <button id="login-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="user" class="w-4 h-4"></i>
+            <span>ログイン</span>
+          </button>
+          `
+          }
+          <hr class="my-2">
+          <button id="export-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            <span>エクスポート</span>
+          </button>
+          <button id="import-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="upload" class="w-4 h-4"></i>
+            <span>インポート</span>
+          </button>
+        </div>
+        `
+            : ''
+        }
       </header>
+      <input type="file" id="import-file-input" accept=".json" style="display: none;" />
 
       <!-- スワイプエリア -->
       <div id="swipe-container" class="flex-1 flex flex-col p-4 overflow-hidden">
@@ -240,19 +400,64 @@ function renderDesktopView(app: HTMLDivElement) {
   app.innerHTML = `
     <div class="min-h-screen bg-background">
       <!-- ヘッダー -->
-      <header class="bg-surface border-b border-gray-200 px-4 py-3">
+      <header class="bg-surface border-b border-gray-200 px-4 py-3 relative">
         <div class="max-w-7xl mx-auto flex items-center justify-between">
           <h1 class="text-xl font-bold">TextNote</h1>
-          <div class="flex gap-2">
+          <div class="flex gap-2 items-center">
+            ${
+              isLoggedIn
+                ? `
+              <span class="text-xs text-text-secondary flex items-center gap-1">
+                <i data-lucide="check-circle" class="w-3 h-3"></i>
+                ${currentUser?.displayName || currentUser?.email || 'ログイン中'}
+              </span>
+            `
+                : ''
+            }
             <button id="add-file" class="btn btn-primary text-sm">
               + 新規ファイル
             </button>
-            <button id="export-data" class="btn text-sm">
-              エクスポート
+            <button id="menu-btn" class="btn text-sm flex items-center gap-1">
+              <i data-lucide="menu" class="w-4 h-4"></i>
+              <span>メニュー</span>
             </button>
           </div>
         </div>
+        ${
+          isMenuOpen
+            ? `
+        <div id="dropdown-menu" class="absolute right-4 top-14 bg-white border border-gray-200 rounded shadow-lg py-2 z-50 min-w-[200px]">
+          ${
+            isLoggedIn
+              ? `
+          <button id="logout-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+            <span>ログアウト</span>
+          </button>
+          <hr class="my-2">
+          `
+              : `
+          <button id="login-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="user" class="w-4 h-4"></i>
+            <span>ログイン</span>
+          </button>
+          <hr class="my-2">
+          `
+          }
+          <button id="export-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            <span>エクスポート</span>
+          </button>
+          <button id="import-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="upload" class="w-4 h-4"></i>
+            <span>インポート</span>
+          </button>
+        </div>
+        `
+            : ''
+        }
       </header>
+      <input type="file" id="import-file-input" accept=".json" style="display: none;" />
 
       <!-- エディタエリア -->
       <div class="max-w-7xl mx-auto p-4">
@@ -304,6 +509,33 @@ function renderDesktopView(app: HTMLDivElement) {
 
 // イベントリスナー設定
 function setupEventListeners() {
+  // メニューボタン
+  document.getElementById('menu-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isMenuOpen = !isMenuOpen;
+    render();
+  });
+
+  // メニュー内クリックの伝播を止める
+  document.getElementById('dropdown-menu')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+  });
+
+  // メニュー外クリックで閉じる
+  if (isMenuOpen) {
+    document.addEventListener(
+      'click',
+      (e) => {
+        const menu = document.getElementById('dropdown-menu');
+        if (menu && !menu.contains(e.target as Node)) {
+          isMenuOpen = false;
+          render();
+        }
+      },
+      { once: true }
+    );
+  }
+
   // ファイルタイトル編集（debounce付き）
   document.querySelectorAll('.file-title-input').forEach((input) => {
     input.addEventListener('input', (e) => {
@@ -394,6 +626,57 @@ function setupEventListeners() {
     }
   });
 
+  // データインポート
+  document.getElementById('import-data')?.addEventListener('click', () => {
+    const input = document.getElementById('import-file-input') as HTMLInputElement;
+    if (input) {
+      input.click();
+    }
+  });
+
+  // ファイル選択時の処理
+  const fileInput = document.getElementById('import-file-input') as HTMLInputElement;
+  if (fileInput) {
+    fileInput.addEventListener('change', async (e) => {
+      const target = e.target as HTMLInputElement;
+      const file = target.files?.[0];
+
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        // データ検証
+        if (!Array.isArray(data)) {
+          throw new Error('無効なデータ形式です。配列である必要があります。');
+        }
+
+        // 確認ダイアログ
+        const message = `${data.length}件のファイルをインポートします。\n既存のデータは削除されます。よろしいですか？`;
+        if (!confirm(message)) {
+          target.value = ''; // ファイル選択をクリア
+          return;
+        }
+
+        // インポート実行
+        await fileService.importData(text);
+        currentFiles = await fileService.getAllFiles();
+        currentFileIndex = 0;
+
+        render();
+        alert('インポートが完了しました！');
+      } catch (error) {
+        console.error('インポートエラー:', error);
+        alert(
+          `インポートに失敗しました。\n${error instanceof Error ? error.message : '不明なエラー'}`
+        );
+      } finally {
+        target.value = ''; // ファイル選択をクリア
+      }
+    });
+  }
+
   // データエクスポート
   document.getElementById('export-data')?.addEventListener('click', async () => {
     const data = await fileService.exportData();
@@ -404,6 +687,37 @@ function setupEventListeners() {
     a.download = `textnote-backup-${Date.now()}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  });
+
+  // ログイン
+  document.getElementById('login-btn')?.addEventListener('click', async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+
+      // モバイルではリダイレクト、デスクトップではポップアップ
+      if (isMobile()) {
+        await signInWithRedirect(auth, provider);
+      } else {
+        await signInWithPopup(auth, provider);
+      }
+      // onAuthStateChangedで自動的に同期とレンダリングが行われる
+    } catch (error: any) {
+      console.error('ログインエラー:', error);
+      alert(`ログインに失敗しました\n\nエラー: ${error.code || error.message}\n\n詳細: ${JSON.stringify(error)}`);
+    }
+  });
+
+  // ログアウト
+  document.getElementById('logout-btn')?.addEventListener('click', async () => {
+    try {
+      if (confirm('ログアウトしますか？\nローカルデータは保持されます。')) {
+        await signOut(auth);
+        // onAuthStateChangedで自動的にレンダリングが行われる
+      }
+    } catch (error) {
+      console.error('ログアウトエラー:', error);
+      alert('ログアウトに失敗しました');
+    }
   });
 }
 

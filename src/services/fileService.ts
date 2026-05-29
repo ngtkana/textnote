@@ -1,14 +1,13 @@
 import { storage } from '../lib/storage';
 import type { TextFile } from '../types';
+import { syncService } from './syncService';
+import { auth } from '../lib/firebase';
 
-// UUID生成（簡易版）
 function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
-// FileService: TextFileのビジネスロジック層
 export class FileService {
-  // 初期化（Storageの初期化を呼び出す）
   async init(): Promise<void> {
     await storage.init();
 
@@ -19,7 +18,6 @@ export class FileService {
     }
   }
 
-  // デフォルトファイルを作成
   private async createDefaultFiles(): Promise<void> {
     const defaultFile: TextFile = {
       id: generateId(),
@@ -33,17 +31,14 @@ export class FileService {
     await storage.createFile(defaultFile);
   }
 
-  // 全ファイルを取得
   async getAllFiles(): Promise<TextFile[]> {
     return await storage.getAllFiles();
   }
 
-  // ファイルをIDで取得
   async getFile(id: string): Promise<TextFile | null> {
     return await storage.getFile(id);
   }
 
-  // 新規ファイルを作成
   async createFile(title: string, content = ''): Promise<TextFile> {
     const files = await storage.getAllFiles();
     const maxOrder = files.reduce((max, f) => Math.max(max, f.order), -1);
@@ -58,10 +53,18 @@ export class FileService {
     };
 
     await storage.createFile(newFile);
+
+    if (auth.currentUser) {
+      try {
+        await syncService.saveFileToCloud(newFile);
+      } catch (error) {
+        console.error('クラウド同期エラー（createFile）:', error);
+      }
+    }
+
     return newFile;
   }
 
-  // ファイルのタイトルを更新
   async updateFileTitle(id: string, title: string): Promise<void> {
     const file = await storage.getFile(id);
     if (!file) throw new Error('File not found');
@@ -70,9 +73,16 @@ export class FileService {
     file.updatedAt = Date.now();
 
     await storage.updateFile(file);
+
+    if (auth.currentUser) {
+      try {
+        await syncService.saveFileToCloud(file);
+      } catch (error) {
+        console.error('クラウド同期エラー（updateFileTitle）:', error);
+      }
+    }
   }
 
-  // ファイルの内容を更新
   async updateFileContent(id: string, content: string): Promise<void> {
     const file = await storage.getFile(id);
     if (!file) throw new Error('File not found');
@@ -81,31 +91,62 @@ export class FileService {
     file.updatedAt = Date.now();
 
     await storage.updateFile(file);
+
+    if (auth.currentUser) {
+      try {
+        await syncService.saveFileToCloud(file);
+      } catch (error) {
+        console.error('クラウド同期エラー（updateFileContent）:', error);
+      }
+    }
   }
 
-  // ファイルを削除
   async deleteFile(id: string): Promise<void> {
     await storage.deleteFile(id);
+
+    if (auth.currentUser) {
+      try {
+        await syncService.deleteFileFromCloud(id);
+      } catch (error) {
+        console.error('クラウド同期エラー（deleteFile）:', error);
+      }
+    }
 
     // 削除後、order を再計算
     await this.reorderFiles();
   }
 
-  // ファイルの順序を変更
   async reorderFiles(): Promise<void> {
     const files = await storage.getAllFiles();
 
-    // order順にソートして再割り当て
     files.sort((a, b) => a.order - b.order);
 
+    const changedFiles: typeof files = [];
+
     for (let i = 0; i < files.length; i++) {
+      const oldOrder = files[i].order;
       files[i].order = i;
-      files[i].updatedAt = Date.now();
-      await storage.updateFile(files[i]);
+
+      // orderが変わったファイルのみ更新
+      if (oldOrder !== i) {
+        files[i].updatedAt = Date.now();
+        await storage.updateFile(files[i]);
+        changedFiles.push(files[i]);
+      }
+    }
+
+    // 変更があったファイルのみクラウド同期
+    if (auth.currentUser && changedFiles.length > 0) {
+      try {
+        for (const file of changedFiles) {
+          await syncService.saveFileToCloud(file);
+        }
+      } catch (error) {
+        console.error('クラウド同期エラー（reorderFiles）:', error);
+      }
     }
   }
 
-  // ファイルの順序を入れ替え
   async swapFileOrder(id1: string, id2: string): Promise<void> {
     const file1 = await storage.getFile(id1);
     const file2 = await storage.getFile(id2);
@@ -123,25 +164,30 @@ export class FileService {
     await storage.updateFile(file2);
   }
 
-  // データエクスポート（JSON）
   async exportData(): Promise<string> {
     const files = await storage.getAllFiles();
     return JSON.stringify(files, null, 2);
   }
 
-  // データインポート（JSON）
   async importData(jsonString: string): Promise<void> {
     const files: TextFile[] = JSON.parse(jsonString);
 
-    // 既存データをクリア
     await storage.clear();
 
-    // インポート
     for (const file of files) {
       await storage.createFile(file);
+    }
+
+    // ログイン中の場合、クラウドも置き換える
+    if (auth.currentUser) {
+      try {
+        await syncService.clearCloud();
+        await syncService.syncToCloud();
+      } catch (error) {
+        console.error('クラウド同期エラー（importData）:', error);
+      }
     }
   }
 }
 
-// シングルトンインスタンス
 export const fileService = new FileService();
