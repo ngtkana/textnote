@@ -143,15 +143,17 @@ function renderSyncStatus(): string {
   return '<div id="sync-status-container"></div>';
 }
 
-// アカウントアイコンをレンダリング
+// アカウントアイコンをレンダリング（クリッカブル）
 function renderAccountIcon(): string {
   if (!isLoggedIn || !currentUser) return '';
 
   if (currentUser.photoURL) {
-    return `<img src="${escapeHtml(currentUser.photoURL)}" alt="アカウント" class="w-8 h-8 rounded-full border border-gray-300" />`;
+    return `<button id="menu-btn" class="w-8 h-8 rounded-full border border-gray-300 overflow-hidden hover:opacity-80">
+      <img src="${escapeHtml(currentUser.photoURL)}" alt="アカウント" class="w-full h-full object-cover" />
+    </button>`;
   }
 
-  return '<div id="account-icon-container" class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center"></div>';
+  return '<button id="menu-btn" class="w-8 h-8 rounded-full bg-gray-200 flex items-center justify-center hover:bg-gray-300"><div id="account-icon-container"></div></button>';
 }
 
 // アカウントアイコン（デフォルト）を動的に描画
@@ -388,12 +390,15 @@ function renderMobileView(app: HTMLDivElement) {
           <div class="flex items-center justify-between">
             <h1 class="text-xl font-bold">TextNote</h1>
             <div class="flex gap-2 items-center">
-              ${renderAccountIcon()}
               ${renderSyncStatus()}
               <button id="add-file" class="btn btn-primary text-sm">+</button>
-              <button id="menu-btn" class="btn text-sm">
-                <i data-lucide="menu" class="w-4 h-4"></i>
-              </button>
+              ${
+                isLoggedIn
+                  ? renderAccountIcon()
+                  : `<button id="menu-btn" class="btn text-sm">
+                      <i data-lucide="menu" class="w-4 h-4"></i>
+                    </button>`
+              }
             </div>
           </div>
           ${
@@ -460,9 +465,13 @@ function renderMobileView(app: HTMLDivElement) {
           <div class="flex gap-2 items-center">
             ${renderSyncStatus()}
             <button id="add-file" class="btn btn-primary text-sm">+</button>
-            <button id="menu-btn" class="btn text-sm">
-              <i data-lucide="menu" class="w-4 h-4"></i>
-            </button>
+            ${
+              isLoggedIn
+                ? renderAccountIcon()
+                : `<button id="menu-btn" class="btn text-sm">
+                    <i data-lucide="menu" class="w-4 h-4"></i>
+                  </button>`
+            }
           </div>
         </div>
         ${
@@ -589,15 +598,18 @@ function renderDesktopView(app: HTMLDivElement) {
         <div class="max-w-7xl mx-auto flex items-center justify-between">
           <h1 class="text-xl font-bold">TextNote</h1>
           <div class="flex gap-2 items-center">
-            ${renderAccountIcon()}
             ${renderSyncStatus()}
             <button id="add-file" class="btn btn-primary text-sm">
               + 新規ファイル
             </button>
-            <button id="menu-btn" class="btn text-sm flex items-center gap-1">
-              <i data-lucide="menu" class="w-4 h-4"></i>
-              <span>メニュー</span>
-            </button>
+            ${
+              isLoggedIn
+                ? renderAccountIcon()
+                : `<button id="menu-btn" class="btn text-sm flex items-center gap-1">
+                    <i data-lucide="menu" class="w-4 h-4"></i>
+                    <span>メニュー</span>
+                  </button>`
+            }
           </div>
         </div>
         ${
