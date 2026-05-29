@@ -72,6 +72,9 @@ class SyncService {
    * クラウドの変更を監視してローカルに反映
    */
   enableRealtimeSync(onUpdate: () => void): void {
+    // 既存の購読を解除（多重購読防止）
+    this.disableRealtimeSync();
+
     const user = auth.currentUser;
     if (!user) return;
 

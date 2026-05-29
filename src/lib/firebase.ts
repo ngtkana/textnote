@@ -3,12 +3,12 @@ import { getAuth } from 'firebase/auth';
 import { getFirestore } from 'firebase/firestore';
 
 const firebaseConfig = {
-  apiKey: '***REMOVED***',
-  authDomain: '***REMOVED***.firebaseapp.com',
-  projectId: '***REMOVED***',
-  storageBucket: '***REMOVED***.firebasestorage.app',
-  messagingSenderId: '***REMOVED***',
-  appId: '1:***REMOVED***:web:d52cd068c4a2fd870a8145',
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
 };
 
 // Firebase初期化

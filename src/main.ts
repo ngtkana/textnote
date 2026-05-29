@@ -615,7 +615,9 @@ function setupEventListeners() {
   // データインポート
   document.getElementById('import-data')?.addEventListener('click', () => {
     const input = document.getElementById('import-file-input') as HTMLInputElement;
-    input.click();
+    if (input) {
+      input.click();
+    }
   });
 
   // ファイル選択時の処理

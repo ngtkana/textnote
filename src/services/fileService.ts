@@ -61,9 +61,13 @@ export class FileService {
 
     await storage.createFile(newFile);
 
-    // クラウド同期（ログイン中のみ）
+    // クラウド同期（ログイン中のみ、エラーは握りつぶす）
     if (auth.currentUser) {
-      await syncService.saveFileToCloud(newFile);
+      try {
+        await syncService.saveFileToCloud(newFile);
+      } catch (error) {
+        console.error('クラウド同期エラー（createFile）:', error);
+      }
     }
 
     return newFile;
@@ -79,9 +83,13 @@ export class FileService {
 
     await storage.updateFile(file);
 
-    // クラウド同期（ログイン中のみ）
+    // クラウド同期（ログイン中のみ、エラーは握りつぶす）
     if (auth.currentUser) {
-      await syncService.saveFileToCloud(file);
+      try {
+        await syncService.saveFileToCloud(file);
+      } catch (error) {
+        console.error('クラウド同期エラー（updateFileTitle）:', error);
+      }
     }
   }
 
@@ -95,9 +103,13 @@ export class FileService {
 
     await storage.updateFile(file);
 
-    // クラウド同期（ログイン中のみ）
+    // クラウド同期（ログイン中のみ、エラーは握りつぶす）
     if (auth.currentUser) {
-      await syncService.saveFileToCloud(file);
+      try {
+        await syncService.saveFileToCloud(file);
+      } catch (error) {
+        console.error('クラウド同期エラー（updateFileContent）:', error);
+      }
     }
   }
 
@@ -105,9 +117,13 @@ export class FileService {
   async deleteFile(id: string): Promise<void> {
     await storage.deleteFile(id);
 
-    // クラウド同期（ログイン中のみ）
+    // クラウド同期（ログイン中のみ、エラーは握りつぶす）
     if (auth.currentUser) {
-      await syncService.deleteFileFromCloud(id);
+      try {
+        await syncService.deleteFileFromCloud(id);
+      } catch (error) {
+        console.error('クラウド同期エラー（deleteFile）:', error);
+      }
     }
 
     // 削除後、order を再計算
@@ -121,14 +137,28 @@ export class FileService {
     // order順にソートして再割り当て
     files.sort((a, b) => a.order - b.order);
 
-    for (let i = 0; i < files.length; i++) {
-      files[i].order = i;
-      files[i].updatedAt = Date.now();
-      await storage.updateFile(files[i]);
+    const changedFiles: typeof files = [];
 
-      // クラウド同期（ログイン中のみ）
-      if (auth.currentUser) {
-        await syncService.saveFileToCloud(files[i]);
+    for (let i = 0; i < files.length; i++) {
+      const oldOrder = files[i].order;
+      files[i].order = i;
+
+      // orderが変わったファイルのみ更新
+      if (oldOrder !== i) {
+        files[i].updatedAt = Date.now();
+        await storage.updateFile(files[i]);
+        changedFiles.push(files[i]);
+      }
+    }
+
+    // クラウド同期（変更があったファイルのみ、エラーは握りつぶす）
+    if (auth.currentUser && changedFiles.length > 0) {
+      try {
+        for (const file of changedFiles) {
+          await syncService.saveFileToCloud(file);
+        }
+      } catch (error) {
+        console.error('クラウド同期エラー（reorderFiles）:', error);
       }
     }
   }
