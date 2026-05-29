@@ -1,8 +1,17 @@
 import './styles/tailwind.css';
 import { fileService } from './services/fileService';
+import { SwipeDetector } from './lib/gestures';
+import type { TextFile } from './types';
 
-let currentFiles: any[] = [];
+let currentFiles: TextFile[] = [];
 let saveTimeouts = new Map<string, number>();
+let currentFileIndex = 0;
+let swipeDetector: SwipeDetector | null = null;
+
+// モバイル判定
+function isMobile(): boolean {
+  return window.innerWidth < 768;
+}
 
 // アプリケーション初期化
 async function init() {
@@ -29,72 +38,11 @@ async function init() {
     // データを取得
     currentFiles = await fileService.getAllFiles();
 
-    // テキストエディタUI
-    app.innerHTML = `
-      <div class="min-h-screen bg-background">
-        <!-- ヘッダー -->
-        <header class="bg-surface border-b border-gray-200 px-4 py-3">
-          <div class="max-w-7xl mx-auto flex items-center justify-between">
-            <h1 class="text-xl font-bold">TextNote</h1>
-            <div class="flex gap-2">
-              <button id="add-file" class="btn btn-primary text-sm">
-                + 新規ファイル
-              </button>
-              <button id="export-data" class="btn text-sm">
-                エクスポート
-              </button>
-            </div>
-          </div>
-        </header>
+    // UIレンダリング
+    render();
 
-        <!-- エディタエリア -->
-        <div class="max-w-7xl mx-auto p-4">
-          <div class="grid desktop:grid-cols-3 mobile:grid-cols-1 gap-4" id="editors-container">
-            ${currentFiles
-              .map(
-                (file) => `
-              <div class="card">
-                <!-- ファイルヘッダー -->
-                <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
-                  <input
-                    type="text"
-                    value="${escapeHtml(file.title)}"
-                    data-file-id="${file.id}"
-                    class="file-title-input font-bold text-lg bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-primary rounded px-2 py-1 flex-1"
-                  />
-                  <button
-                    data-file-id="${file.id}"
-                    class="delete-file-btn text-red-600 hover:bg-red-50 rounded p-2 ml-2"
-                    title="削除"
-                  >
-                    ✕
-                  </button>
-                </div>
-
-                <!-- テキストエディタ -->
-                <textarea
-                  data-file-id="${file.id}"
-                  class="file-content-textarea w-full h-64 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none font-mono text-sm"
-                  placeholder="ここにテキストを入力..."
-                >${escapeHtml(file.content)}</textarea>
-
-                <!-- メタ情報 -->
-                <div class="mt-2 text-xs text-text-secondary">
-                  更新: ${formatDate(file.updatedAt)}
-                </div>
-              </div>
-            `
-              )
-              .join('')}
-          </div>
-
-          ${currentFiles.length === 0 ? '<div class="text-center text-text-secondary mt-8">ファイルがありません。「+ 新規ファイル」から作成してください。</div>' : ''}
-        </div>
-      </div>
-    `;
-
-    // イベントリスナー設定
-    setupEventListeners();
+    // リサイズ時に再描画
+    window.addEventListener('resize', debounce(render, 300));
   } catch (error) {
     console.error('初期化エラー:', error);
     app.innerHTML = `
@@ -106,6 +54,214 @@ async function init() {
       </div>
     `;
   }
+}
+
+// UIレンダリング
+function render() {
+  const app = document.querySelector<HTMLDivElement>('#app')!;
+
+  if (isMobile()) {
+    renderMobileView(app);
+  } else {
+    renderDesktopView(app);
+  }
+
+  setupEventListeners();
+}
+
+// モバイルビュー（1画面1ファイル + スワイプ）
+function renderMobileView(app: HTMLDivElement) {
+  // スワイプ検出クリーンアップ
+  if (swipeDetector) {
+    swipeDetector.destroy();
+    swipeDetector = null;
+  }
+
+  if (currentFiles.length === 0) {
+    app.innerHTML = `
+      <div class="min-h-screen bg-background flex flex-col">
+        <header class="bg-surface border-b border-gray-200 px-4 py-3">
+          <div class="flex items-center justify-between">
+            <h1 class="text-xl font-bold">TextNote</h1>
+            <div class="flex gap-2">
+              <button id="add-file" class="btn btn-primary text-sm">+</button>
+              <button id="export-data" class="btn text-sm">⤓</button>
+            </div>
+          </div>
+        </header>
+        <div class="flex-1 flex items-center justify-center text-text-secondary px-4 text-center">
+          ファイルがありません。<br>「+」から作成してください。
+        </div>
+      </div>
+    `;
+    return;
+  }
+
+  // インデックス範囲チェック
+  if (currentFileIndex >= currentFiles.length) {
+    currentFileIndex = currentFiles.length - 1;
+  }
+  if (currentFileIndex < 0) {
+    currentFileIndex = 0;
+  }
+
+  const file = currentFiles[currentFileIndex];
+
+  app.innerHTML = `
+    <div class="min-h-screen bg-background flex flex-col">
+      <!-- ヘッダー -->
+      <header class="bg-surface border-b border-gray-200 px-4 py-3">
+        <div class="flex items-center justify-between">
+          <h1 class="text-xl font-bold">TextNote</h1>
+          <div class="flex gap-2">
+            <button id="add-file" class="btn btn-primary text-sm">+</button>
+            <button id="export-data" class="btn text-sm">⤓</button>
+          </div>
+        </div>
+      </header>
+
+      <!-- スワイプエリア -->
+      <div id="swipe-container" class="flex-1 flex flex-col p-4 overflow-hidden">
+        <!-- ファイルヘッダー -->
+        <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
+          <input
+            type="text"
+            value="${escapeHtml(file.title)}"
+            data-file-id="${file.id}"
+            class="file-title-input font-bold text-lg bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-primary rounded px-2 py-1 flex-1"
+            placeholder="タイトル"
+          />
+          <span class="text-sm text-text-secondary ml-2">(${currentFileIndex + 1}/${currentFiles.length})</span>
+          <button
+            data-file-id="${file.id}"
+            class="delete-file-btn text-red-600 hover:bg-red-50 rounded p-2 ml-2"
+            title="削除"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- テキストエディタ -->
+        <textarea
+          data-file-id="${file.id}"
+          class="file-content-textarea flex-1 w-full p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none font-mono text-sm"
+          placeholder="ここにテキストを入力..."
+        >${escapeHtml(file.content)}</textarea>
+
+        <!-- メタ情報 -->
+        <div class="mt-2 text-xs text-text-secondary">
+          更新: ${formatDate(file.updatedAt)}
+        </div>
+
+        <!-- ドットナビゲーション -->
+        ${
+          currentFiles.length > 1
+            ? `
+        <div class="flex justify-center gap-2 mt-4">
+          ${currentFiles
+            .map(
+              (_, index) => `
+            <button
+              class="dot-nav ${index === currentFileIndex ? 'bg-primary' : 'bg-gray-300'} w-2 h-2 rounded-full transition-colors"
+              data-index="${index}"
+            ></button>
+          `
+            )
+            .join('')}
+        </div>
+        `
+            : ''
+        }
+      </div>
+    </div>
+  `;
+
+  // スワイプ検出設定
+  const swipeContainer = document.getElementById('swipe-container');
+  if (swipeContainer) {
+    swipeDetector = new SwipeDetector(swipeContainer, (event) => {
+      if (event.direction === 'left' && currentFileIndex < currentFiles.length - 1) {
+        currentFileIndex++;
+        render();
+      } else if (event.direction === 'right' && currentFileIndex > 0) {
+        currentFileIndex--;
+        render();
+      }
+    });
+  }
+}
+
+// デスクトップビュー（グリッドレイアウト）
+function renderDesktopView(app: HTMLDivElement) {
+  // スワイプ検出クリーンアップ
+  if (swipeDetector) {
+    swipeDetector.destroy();
+    swipeDetector = null;
+  }
+
+  app.innerHTML = `
+    <div class="min-h-screen bg-background">
+      <!-- ヘッダー -->
+      <header class="bg-surface border-b border-gray-200 px-4 py-3">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+          <h1 class="text-xl font-bold">TextNote</h1>
+          <div class="flex gap-2">
+            <button id="add-file" class="btn btn-primary text-sm">
+              + 新規ファイル
+            </button>
+            <button id="export-data" class="btn text-sm">
+              エクスポート
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- エディタエリア -->
+      <div class="max-w-7xl mx-auto p-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" id="editors-container">
+          ${currentFiles
+            .map(
+              (file) => `
+            <div class="card">
+              <!-- ファイルヘッダー -->
+              <div class="flex items-center justify-between mb-3 pb-2 border-b border-gray-200">
+                <input
+                  type="text"
+                  value="${escapeHtml(file.title)}"
+                  data-file-id="${file.id}"
+                  class="file-title-input font-bold text-lg bg-transparent border-none focus:outline-none focus:ring-2 focus:ring-primary rounded px-2 py-1 flex-1"
+                  placeholder="タイトル"
+                />
+                <button
+                  data-file-id="${file.id}"
+                  class="delete-file-btn text-red-600 hover:bg-red-50 rounded p-2 ml-2"
+                  title="削除"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <!-- テキストエディタ -->
+              <textarea
+                data-file-id="${file.id}"
+                class="file-content-textarea w-full h-64 p-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary resize-none font-mono text-sm"
+                placeholder="ここにテキストを入力..."
+              >${escapeHtml(file.content)}</textarea>
+
+              <!-- メタ情報 -->
+              <div class="mt-2 text-xs text-text-secondary">
+                更新: ${formatDate(file.updatedAt)}
+              </div>
+            </div>
+          `
+            )
+            .join('')}
+        </div>
+
+        ${currentFiles.length === 0 ? '<div class="text-center text-text-secondary mt-8">ファイルがありません。「+ 新規ファイル」から作成してください。</div>' : ''}
+      </div>
+    </div>
+  `;
 }
 
 // イベントリスナー設定
@@ -162,8 +318,25 @@ function setupEventListeners() {
 
       if (file && confirm(`「${file.title}」を削除しますか？`)) {
         await fileService.deleteFile(fileId);
-        await init(); // 再描画
+        currentFiles = await fileService.getAllFiles();
+
+        // モバイルビューの場合、削除後のインデックス調整
+        if (isMobile() && currentFileIndex >= currentFiles.length) {
+          currentFileIndex = Math.max(0, currentFiles.length - 1);
+        }
+
+        render();
       }
+    });
+  });
+
+  // ドットナビゲーション
+  document.querySelectorAll('.dot-nav').forEach((dot) => {
+    dot.addEventListener('click', (e) => {
+      const target = e.target as HTMLButtonElement;
+      const index = parseInt(target.dataset.index!, 10);
+      currentFileIndex = index;
+      render();
     });
   });
 
@@ -172,7 +345,14 @@ function setupEventListeners() {
     const title = prompt('ファイル名を入力してください', '新しいメモ');
     if (title) {
       await fileService.createFile(title);
-      await init(); // 再描画
+      currentFiles = await fileService.getAllFiles();
+
+      // モバイルビューの場合、新しいファイルを表示
+      if (isMobile()) {
+        currentFileIndex = currentFiles.length - 1;
+      }
+
+      render();
     }
   });
 
@@ -212,6 +392,23 @@ function formatDate(timestamp: number): string {
   if (days < 7) return `${days}日前`;
 
   return date.toLocaleDateString('ja-JP');
+}
+
+function debounce<T extends (...args: any[]) => void>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: number | null = null;
+
+  return function (...args: Parameters<T>) {
+    if (timeout !== null) {
+      clearTimeout(timeout);
+    }
+
+    timeout = window.setTimeout(() => {
+      func(...args);
+    }, wait);
+  };
 }
 
 // DOMContentLoaded後に初期化
