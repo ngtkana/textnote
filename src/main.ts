@@ -12,7 +12,7 @@ import {
   signOut,
   onAuthStateChanged,
 } from 'firebase/auth';
-import { createIcons, User, LogOut, CheckCircle } from 'lucide';
+import { createIcons, User, LogOut, CheckCircle, Menu, Download, Upload } from 'lucide';
 
 let currentFiles: TextFile[] = [];
 let saveTimeouts = new Map<string, number>();
@@ -22,6 +22,7 @@ let lastViewportWidth = window.innerWidth;
 let isLoggedIn = false;
 let currentUser: { displayName: string | null; email: string | null; photoURL: string | null } | null =
   null;
+let isMenuOpen = false;
 
 // モバイル判定
 function isMobile(): boolean {
@@ -160,6 +161,9 @@ function render() {
       User,
       LogOut,
       CheckCircle,
+      Menu,
+      Download,
+      Upload,
     },
   });
 
@@ -189,21 +193,53 @@ function renderMobileView(app: HTMLDivElement) {
   if (currentFiles.length === 0) {
     app.innerHTML = `
       <div class="min-h-screen bg-background flex flex-col">
-        <header class="bg-surface border-b border-gray-200 px-4 py-3">
+        <header class="bg-surface border-b border-gray-200 px-4 py-3 relative">
           <div class="flex items-center justify-between">
             <h1 class="text-xl font-bold">TextNote</h1>
             <div class="flex gap-2">
-              ${
-                isLoggedIn
-                  ? `<button id="logout-btn" class="btn text-xs" title="ログアウト"><i data-lucide="log-out" class="w-4 h-4"></i></button>`
-                  : `<button id="login-btn" class="btn text-xs" title="ログイン"><i data-lucide="user" class="w-4 h-4"></i></button>`
-              }
               <button id="add-file" class="btn btn-primary text-sm">+</button>
-              <button id="import-data" class="btn text-sm">⤴</button>
-              <button id="export-data" class="btn text-sm">⤓</button>
+              <button id="menu-btn" class="btn text-sm">
+                <i data-lucide="menu" class="w-4 h-4"></i>
+              </button>
             </div>
           </div>
+          ${
+            isMenuOpen
+              ? `
+          <div id="dropdown-menu" class="absolute right-4 top-14 bg-white border border-gray-200 rounded shadow-lg py-2 z-50 min-w-[180px]">
+            ${
+              isLoggedIn
+                ? `
+            <div class="px-4 py-2 border-b border-gray-200 text-xs text-text-secondary">
+              ${currentUser?.email || 'ログイン中'}
+            </div>
+            <button id="logout-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+              <i data-lucide="log-out" class="w-4 h-4"></i>
+              <span>ログアウト</span>
+            </button>
+            `
+                : `
+            <button id="login-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+              <i data-lucide="user" class="w-4 h-4"></i>
+              <span>ログイン</span>
+            </button>
+            `
+            }
+            <hr class="my-2">
+            <button id="export-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+              <i data-lucide="download" class="w-4 h-4"></i>
+              <span>エクスポート</span>
+            </button>
+            <button id="import-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+              <i data-lucide="upload" class="w-4 h-4"></i>
+              <span>インポート</span>
+            </button>
+          </div>
+          `
+              : ''
+          }
         </header>
+        <input type="file" id="import-file-input" accept=".json" style="display: none;" />
         <div class="flex-1 flex items-center justify-center text-text-secondary px-4 text-center">
           ファイルがありません。<br>「+」から作成してください。
         </div>
@@ -225,20 +261,51 @@ function renderMobileView(app: HTMLDivElement) {
   app.innerHTML = `
     <div class="min-h-screen bg-background flex flex-col">
       <!-- ヘッダー -->
-      <header class="bg-surface border-b border-gray-200 px-4 py-3">
+      <header class="bg-surface border-b border-gray-200 px-4 py-3 relative">
         <div class="flex items-center justify-between">
           <h1 class="text-xl font-bold">TextNote</h1>
           <div class="flex gap-2">
-            ${
-              isLoggedIn
-                ? `<button id="logout-btn" class="btn text-xs" title="ログアウト"><i data-lucide="log-out" class="w-4 h-4"></i></button>`
-                : `<button id="login-btn" class="btn text-xs" title="ログイン"><i data-lucide="user" class="w-4 h-4"></i></button>`
-            }
             <button id="add-file" class="btn btn-primary text-sm">+</button>
-            <button id="import-data" class="btn text-sm">⤴</button>
-            <button id="export-data" class="btn text-sm">⤓</button>
+            <button id="menu-btn" class="btn text-sm">
+              <i data-lucide="menu" class="w-4 h-4"></i>
+            </button>
           </div>
         </div>
+        ${
+          isMenuOpen
+            ? `
+        <div id="dropdown-menu" class="absolute right-4 top-14 bg-white border border-gray-200 rounded shadow-lg py-2 z-50 min-w-[180px]">
+          ${
+            isLoggedIn
+              ? `
+          <div class="px-4 py-2 border-b border-gray-200 text-xs text-text-secondary">
+            ${currentUser?.email || 'ログイン中'}
+          </div>
+          <button id="logout-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+            <span>ログアウト</span>
+          </button>
+          `
+              : `
+          <button id="login-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="user" class="w-4 h-4"></i>
+            <span>ログイン</span>
+          </button>
+          `
+          }
+          <hr class="my-2">
+          <button id="export-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            <span>エクスポート</span>
+          </button>
+          <button id="import-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="upload" class="w-4 h-4"></i>
+            <span>インポート</span>
+          </button>
+        </div>
+        `
+            : ''
+        }
       </header>
       <input type="file" id="import-file-input" accept=".json" style="display: none;" />
 
@@ -324,7 +391,7 @@ function renderDesktopView(app: HTMLDivElement) {
   app.innerHTML = `
     <div class="min-h-screen bg-background">
       <!-- ヘッダー -->
-      <header class="bg-surface border-b border-gray-200 px-4 py-3">
+      <header class="bg-surface border-b border-gray-200 px-4 py-3 relative">
         <div class="max-w-7xl mx-auto flex items-center justify-between">
           <h1 class="text-xl font-bold">TextNote</h1>
           <div class="flex gap-2 items-center">
@@ -335,29 +402,51 @@ function renderDesktopView(app: HTMLDivElement) {
                 <i data-lucide="check-circle" class="w-3 h-3"></i>
                 ${currentUser?.displayName || currentUser?.email || 'ログイン中'}
               </span>
-              <button id="logout-btn" class="btn text-sm flex items-center gap-1" title="ログアウト">
-                <i data-lucide="log-out" class="w-4 h-4"></i>
-                ログアウト
-              </button>
             `
-                : `
-              <button id="login-btn" class="btn text-sm flex items-center gap-1" title="Googleでログイン">
-                <i data-lucide="user" class="w-4 h-4"></i>
-                ログイン
-              </button>
-            `
+                : ''
             }
             <button id="add-file" class="btn btn-primary text-sm">
               + 新規ファイル
             </button>
-            <button id="import-data" class="btn text-sm">
-              インポート
-            </button>
-            <button id="export-data" class="btn text-sm">
-              エクスポート
+            <button id="menu-btn" class="btn text-sm flex items-center gap-1">
+              <i data-lucide="menu" class="w-4 h-4"></i>
+              <span>メニュー</span>
             </button>
           </div>
         </div>
+        ${
+          isMenuOpen
+            ? `
+        <div id="dropdown-menu" class="absolute right-4 top-14 bg-white border border-gray-200 rounded shadow-lg py-2 z-50 min-w-[200px]">
+          ${
+            isLoggedIn
+              ? `
+          <button id="logout-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="log-out" class="w-4 h-4"></i>
+            <span>ログアウト</span>
+          </button>
+          <hr class="my-2">
+          `
+              : `
+          <button id="login-btn" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="user" class="w-4 h-4"></i>
+            <span>ログイン</span>
+          </button>
+          <hr class="my-2">
+          `
+          }
+          <button id="export-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="download" class="w-4 h-4"></i>
+            <span>エクスポート</span>
+          </button>
+          <button id="import-data" class="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2">
+            <i data-lucide="upload" class="w-4 h-4"></i>
+            <span>インポート</span>
+          </button>
+        </div>
+        `
+            : ''
+        }
       </header>
       <input type="file" id="import-file-input" accept=".json" style="display: none;" />
 
@@ -411,6 +500,28 @@ function renderDesktopView(app: HTMLDivElement) {
 
 // イベントリスナー設定
 function setupEventListeners() {
+  // メニューボタン
+  document.getElementById('menu-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    isMenuOpen = !isMenuOpen;
+    render();
+  });
+
+  // メニュー外クリックで閉じる
+  if (isMenuOpen) {
+    document.addEventListener(
+      'click',
+      (e) => {
+        const menu = document.getElementById('dropdown-menu');
+        if (menu && !menu.contains(e.target as Node)) {
+          isMenuOpen = false;
+          render();
+        }
+      },
+      { once: true }
+    );
+  }
+
   // ファイルタイトル編集（debounce付き）
   document.querySelectorAll('.file-title-input').forEach((input) => {
     input.addEventListener('input', (e) => {
