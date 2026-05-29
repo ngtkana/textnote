@@ -1,11 +1,9 @@
 import { DB_NAME, DB_VERSION, STORE_NAME } from '../types';
 import type { TextFile } from '../types';
 
-// IndexedDBのラッパークラス
 class Storage {
   private db: IDBDatabase | null = null;
 
-  // データベース初期化
   async init(): Promise<void> {
     return new Promise((resolve, reject) => {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
@@ -32,7 +30,6 @@ class Storage {
     });
   }
 
-  // 全TextFileを取得（order順）
   async getAllFiles(): Promise<TextFile[]> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -52,7 +49,6 @@ class Storage {
     });
   }
 
-  // TextFileをIDで取得
   async getFile(id: string): Promise<TextFile | null> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -71,7 +67,6 @@ class Storage {
     });
   }
 
-  // TextFileを作成
   async createFile(file: TextFile): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -90,7 +85,6 @@ class Storage {
     });
   }
 
-  // TextFileを更新
   async updateFile(file: TextFile): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -109,7 +103,6 @@ class Storage {
     });
   }
 
-  // TextFileを削除
   async deleteFile(id: string): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -128,7 +121,6 @@ class Storage {
     });
   }
 
-  // 全データをクリア
   async clear(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
 
@@ -148,5 +140,4 @@ class Storage {
   }
 }
 
-// シングルトンインスタンス
 export const storage = new Storage();

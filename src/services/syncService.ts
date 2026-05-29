@@ -16,9 +16,6 @@ import type { TextFile } from '../types';
 class SyncService {
   private unsubscribe: Unsubscribe | null = null;
 
-  /**
-   * ローカル（IndexedDB） → クラウド（Firestore）に同期
-   */
   async syncToCloud(): Promise<void> {
     const user = auth.currentUser;
     if (!user) throw new Error('ログインしていません');
@@ -30,9 +27,6 @@ class SyncService {
     }
   }
 
-  /**
-   * クラウド（Firestore） → ローカル（IndexedDB）に同期
-   */
   async syncFromCloud(): Promise<void> {
     const user = auth.currentUser;
     if (!user) throw new Error('ログインしていません');
@@ -47,19 +41,13 @@ class SyncService {
     }
   }
 
-  /**
-   * 特定のファイルをクラウドに保存
-   */
   async saveFileToCloud(file: TextFile): Promise<void> {
     const user = auth.currentUser;
-    if (!user) return; // ログインしていなければスキップ
+    if (!user) return;
 
     await setDoc(doc(db, 'users', user.uid, 'files', file.id), file);
   }
 
-  /**
-   * 特定のファイルをクラウドから削除
-   */
   async deleteFileFromCloud(fileId: string): Promise<void> {
     const user = auth.currentUser;
     if (!user) return;
@@ -67,10 +55,6 @@ class SyncService {
     await deleteDoc(doc(db, 'users', user.uid, 'files', fileId));
   }
 
-  /**
-   * リアルタイム同期を開始
-   * クラウドの変更を監視してローカルに反映
-   */
   enableRealtimeSync(onUpdate: () => void): void {
     // 既存の購読を解除（多重購読防止）
     this.disableRealtimeSync();
@@ -96,9 +80,6 @@ class SyncService {
     });
   }
 
-  /**
-   * リアルタイム同期を停止
-   */
   disableRealtimeSync(): void {
     if (this.unsubscribe) {
       this.unsubscribe();
