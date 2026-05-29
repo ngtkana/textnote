@@ -153,10 +153,12 @@ function renderMobileView(app: HTMLDivElement) {
           <h1 class="text-xl font-bold">TextNote</h1>
           <div class="flex gap-2">
             <button id="add-file" class="btn btn-primary text-sm">+</button>
+            <button id="import-data" class="btn text-sm">⤴</button>
             <button id="export-data" class="btn text-sm">⤓</button>
           </div>
         </div>
       </header>
+      <input type="file" id="import-file-input" accept=".json" style="display: none;" />
 
       <!-- スワイプエリア -->
       <div id="swipe-container" class="flex-1 flex flex-col p-4 overflow-hidden">
@@ -247,12 +249,16 @@ function renderDesktopView(app: HTMLDivElement) {
             <button id="add-file" class="btn btn-primary text-sm">
               + 新規ファイル
             </button>
+            <button id="import-data" class="btn text-sm">
+              インポート
+            </button>
             <button id="export-data" class="btn text-sm">
               エクスポート
             </button>
           </div>
         </div>
       </header>
+      <input type="file" id="import-file-input" accept=".json" style="display: none;" />
 
       <!-- エディタエリア -->
       <div class="max-w-7xl mx-auto p-4">
@@ -393,6 +399,55 @@ function setupEventListeners() {
       render();
     }
   });
+
+  // データインポート
+  document.getElementById('import-data')?.addEventListener('click', () => {
+    const input = document.getElementById('import-file-input') as HTMLInputElement;
+    input.click();
+  });
+
+  // ファイル選択時の処理
+  const fileInput = document.getElementById('import-file-input') as HTMLInputElement;
+  if (fileInput) {
+    fileInput.addEventListener('change', async (e) => {
+      const target = e.target as HTMLInputElement;
+      const file = target.files?.[0];
+
+      if (!file) return;
+
+      try {
+        const text = await file.text();
+        const data = JSON.parse(text);
+
+        // データ検証
+        if (!Array.isArray(data)) {
+          throw new Error('無効なデータ形式です。配列である必要があります。');
+        }
+
+        // 確認ダイアログ
+        const message = `${data.length}件のファイルをインポートします。\n既存のデータは削除されます。よろしいですか？`;
+        if (!confirm(message)) {
+          target.value = ''; // ファイル選択をクリア
+          return;
+        }
+
+        // インポート実行
+        await fileService.importData(text);
+        currentFiles = await fileService.getAllFiles();
+        currentFileIndex = 0;
+
+        render();
+        alert('インポートが完了しました！');
+      } catch (error) {
+        console.error('インポートエラー:', error);
+        alert(
+          `インポートに失敗しました。\n${error instanceof Error ? error.message : '不明なエラー'}`
+        );
+      } finally {
+        target.value = ''; // ファイル選択をクリア
+      }
+    });
+  }
 
   // データエクスポート
   document.getElementById('export-data')?.addEventListener('click', async () => {
