@@ -166,14 +166,17 @@ async function init() {
     syncService.setStatusCallback(setSyncStatus);
 
     // Firebase リダイレクト結果を確認（モバイルログイン後）
+    console.log('[init] getRedirectResult 開始');
     try {
       const result = await getRedirectResult(auth);
       if (result) {
         // リダイレクトログイン成功
-        console.log('リダイレクトログイン成功:', result.user.email);
+        console.log('[init] リダイレクトログイン成功:', result.user.email);
+      } else {
+        console.log('[init] リダイレクト結果なし（通常起動）');
       }
     } catch (error: any) {
-      console.error('リダイレクトログインエラー:', error);
+      console.error('[init] リダイレクトログインエラー:', error);
       alert(
         `リダイレクトログインエラー\n\nエラーコード: ${error.code}\nメッセージ: ${error.message}`
       );
@@ -187,6 +190,8 @@ async function init() {
 
     // Firebase認証状態の監視
     onAuthStateChanged(auth, async (user) => {
+      console.log('[onAuthStateChanged] 認証状態変更:', user ? user.email : 'ログアウト');
+
       if (user) {
         isLoggedIn = true;
         currentUser = {
@@ -195,24 +200,33 @@ async function init() {
           photoURL: user.photoURL,
         };
 
+        console.log('[onAuthStateChanged] ログイン処理開始');
+
         // ログイン時、クラウドから同期
         try {
+          console.log('[onAuthStateChanged] syncFromCloud 開始');
           const synced = await syncService.syncFromCloud();
+          console.log('[onAuthStateChanged] syncFromCloud 完了:', synced);
 
           // クラウドが空だった場合、ローカルをアップロード
           if (!synced) {
             const localFiles = await fileService.getAllFiles();
+            console.log('[onAuthStateChanged] ローカルファイル数:', localFiles.length);
             if (localFiles.length > 0) {
+              console.log('[onAuthStateChanged] syncToCloud 開始');
               await syncService.syncToCloud();
+              console.log('[onAuthStateChanged] syncToCloud 完了');
             }
           }
 
           currentFiles = await fileService.getAllFiles();
+          console.log('[onAuthStateChanged] ファイル取得完了:', currentFiles.length);
         } catch (error) {
-          console.error('クラウド同期エラー:', error);
+          console.error('[onAuthStateChanged] クラウド同期エラー:', error);
         }
 
         // リアルタイム同期を開始
+        console.log('[onAuthStateChanged] リアルタイム同期開始');
         syncService.enableRealtimeSync(async () => {
           currentFiles = await fileService.getAllFiles();
           render();
@@ -225,6 +239,7 @@ async function init() {
         syncService.disableRealtimeSync();
       }
 
+      console.log('[onAuthStateChanged] render 実行');
       render();
     });
 
@@ -833,17 +848,22 @@ function setupEventListeners() {
   // ログイン
   document.getElementById('login-btn')?.addEventListener('click', async () => {
     try {
+      console.log('[login-btn] ログインボタンクリック');
       const provider = new GoogleAuthProvider();
 
       // モバイルではリダイレクト、デスクトップではポップアップ
       if (isMobile()) {
+        console.log('[login-btn] モバイル検出: signInWithRedirect 実行');
         await signInWithRedirect(auth, provider);
+        console.log('[login-btn] signInWithRedirect 完了（リダイレクト開始）');
       } else {
-        await signInWithPopup(auth, provider);
+        console.log('[login-btn] デスクトップ検出: signInWithPopup 実行');
+        const result = await signInWithPopup(auth, provider);
+        console.log('[login-btn] signInWithPopup 完了:', result.user.email);
       }
       // onAuthStateChangedで自動的に同期とレンダリングが行われる
     } catch (error: any) {
-      console.error('ログインエラー:', error);
+      console.error('[login-btn] ログインエラー:', error);
       alert(`ログインに失敗しました\n\nエラー: ${error.code || error.message}\n\n詳細: ${JSON.stringify(error)}`);
     }
   });
