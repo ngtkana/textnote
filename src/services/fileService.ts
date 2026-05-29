@@ -93,11 +93,9 @@ export class FileService {
     await storage.updateFile(file);
 
     if (auth.currentUser) {
-      try {
-        await syncService.saveFileToCloud(file);
-      } catch (error) {
+      syncService.saveFileToCloud(file).catch((error) => {
         console.error('クラウド同期エラー（updateFileContent）:', error);
-      }
+      });
     }
   }
 

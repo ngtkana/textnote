@@ -55,17 +55,21 @@ function setSyncStatus(status: 'idle' | 'syncing' | 'success' | 'error', errorMe
   if (status === 'success') {
     syncStatusTimeout = window.setTimeout(() => {
       syncStatus = 'idle';
-      render();
+      updateSyncStatusDisplay();
     }, 3000);
   }
 
-  render();
+  updateSyncStatusDisplay();
 }
 
-// 同期状態インジケーターをレンダリング
-function renderSyncStatus(): string {
+// 同期ステータス表示のみを更新（DOM全体を再描画しない）
+function updateSyncStatusDisplay() {
+  const statusContainer = document.getElementById('sync-status-container');
+  if (!statusContainer) return;
+
   if (!isLoggedIn || syncStatus === 'idle') {
-    return '';
+    statusContainer.innerHTML = '';
+    return;
   }
 
   const statusConfig = {
@@ -91,12 +95,20 @@ function renderSyncStatus(): string {
 
   const config = statusConfig[syncStatus];
 
-  return `
+  statusContainer.innerHTML = `
     <div class="flex items-center gap-1 text-xs ${config.class}" ${syncStatus === 'error' ? `title="${escapeHtml(syncErrorMessage)}"` : ''}>
       <i data-lucide="${config.icon}" class="w-3 h-3 ${config.animate}"></i>
       <span class="hidden sm:inline">${config.text}</span>
     </div>
   `;
+
+  // アイコンを再初期化
+  createIcons();
+}
+
+// 同期状態インジケーターのコンテナをレンダリング
+function renderSyncStatus(): string {
+  return '<div id="sync-status-container"></div>';
 }
 
 // アプリケーション初期化
@@ -213,11 +225,14 @@ async function init() {
 function render() {
   const app = document.querySelector<HTMLDivElement>('#app')!;
 
-  // 現在フォーカス中の要素を保存
+  // 現在フォーカス中の要素とスクロール位置を保存
   const activeElement = document.activeElement as HTMLElement;
   const activeFileId = activeElement?.dataset?.fileId;
   const isTextarea = activeElement?.classList?.contains('file-content-textarea');
   const isTitleInput = activeElement?.classList?.contains('file-title-input');
+  const scrollTop = isTextarea ? (activeElement as HTMLTextAreaElement).scrollTop : 0;
+  const selectionStart = (activeElement as HTMLTextAreaElement)?.selectionStart || 0;
+  const selectionEnd = (activeElement as HTMLTextAreaElement)?.selectionEnd || 0;
 
   if (isMobile()) {
     renderMobileView(app);
@@ -239,7 +254,7 @@ function render() {
     },
   });
 
-  // フォーカスを復元
+  // フォーカスとスクロール位置を復元
   if (activeFileId && (isTextarea || isTitleInput)) {
     const selector = isTextarea
       ? `.file-content-textarea[data-file-id="${activeFileId}"]`
@@ -247,11 +262,17 @@ function render() {
     const element = document.querySelector(selector) as HTMLInputElement | HTMLTextAreaElement;
     if (element) {
       element.focus();
-      // カーソル位置を最後に移動
-      const length = element.value.length;
-      element.setSelectionRange(length, length);
+      // カーソル位置を復元
+      element.setSelectionRange(selectionStart, selectionEnd);
+      // スクロール位置を復元（textareaの場合のみ）
+      if (isTextarea) {
+        (element as HTMLTextAreaElement).scrollTop = scrollTop;
+      }
     }
   }
+
+  // 同期ステータスを初期表示
+  updateSyncStatusDisplay();
 }
 
 // モバイルビュー（1画面1ファイル + スワイプ）
