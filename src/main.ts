@@ -14,6 +14,7 @@ import {
 } from 'firebase/auth';
 import {
   createIcons,
+  createElement,
   User,
   LogOut,
   CheckCircle,
@@ -84,19 +85,19 @@ function updateSyncStatusDisplay() {
 
   const statusConfig = {
     syncing: {
-      icon: 'loader-2',
+      icon: Loader2,
       text: '同期中',
       class: 'text-blue-600',
       animate: 'animate-spin',
     },
     success: {
-      icon: 'check-circle',
+      icon: CheckCircle,
       text: '保存済み',
       class: 'text-green-600',
       animate: '',
     },
     error: {
-      icon: 'alert-circle',
+      icon: AlertCircle,
       text: 'エラー',
       class: 'text-red-600',
       animate: '',
@@ -105,21 +106,36 @@ function updateSyncStatusDisplay() {
 
   const config = statusConfig[syncStatus];
 
-  statusContainer.innerHTML = `
-    <div class="flex items-center gap-1 text-xs ${config.class}" ${syncStatus === 'error' ? `title="${escapeHtml(syncErrorMessage)}"` : ''}>
-      <i data-lucide="${config.icon}" class="w-3 h-3 ${config.animate}"></i>
-      <span class="hidden sm:inline">${config.text}</span>
-    </div>
-  `;
+  // コンテナをクリア
+  statusContainer.innerHTML = '';
 
-  // アイコンを再初期化（同期ステータス用のアイコン）
-  createIcons({
-    icons: {
-      Loader2,
-      CheckCircle,
-      AlertCircle,
-    },
-  });
+  // ラッパーdivを作成
+  const wrapper = document.createElement('div');
+  wrapper.className = `flex items-center gap-1 text-xs ${config.class}`;
+  if (syncStatus === 'error') {
+    wrapper.title = syncErrorMessage;
+  }
+
+  // Lucideアイコンを作成
+  const iconSvg = createElement(config.icon);
+  iconSvg.setAttribute('width', '12');
+  iconSvg.setAttribute('height', '12');
+  iconSvg.classList.add('w-3', 'h-3');
+  if (config.animate) {
+    iconSvg.classList.add(config.animate);
+  }
+
+  // テキストspan を作成
+  const textSpan = document.createElement('span');
+  textSpan.className = 'hidden sm:inline';
+  textSpan.textContent = config.text;
+
+  // ラッパーに追加
+  wrapper.appendChild(iconSvg);
+  wrapper.appendChild(textSpan);
+
+  // コンテナに追加
+  statusContainer.appendChild(wrapper);
 }
 
 // 同期状態インジケーターのコンテナをレンダリング
@@ -246,7 +262,9 @@ function render() {
   document.querySelectorAll('.file-content-textarea').forEach((textarea) => {
     const fileId = (textarea as HTMLTextAreaElement).dataset.fileId;
     if (fileId) {
-      scrollPositions.set(fileId, (textarea as HTMLTextAreaElement).scrollTop);
+      const scrollTop = (textarea as HTMLTextAreaElement).scrollTop;
+      scrollPositions.set(fileId, scrollTop);
+      console.log(`[render] 保存 scrollTop for ${fileId}: ${scrollTop}`);
     }
   });
 
@@ -279,13 +297,19 @@ function render() {
   });
 
   // 全てのtextareaのスクロール位置を復元
-  scrollPositions.forEach((scrollTop, fileId) => {
-    const textarea = document.querySelector(
-      `.file-content-textarea[data-file-id="${fileId}"]`
-    ) as HTMLTextAreaElement;
-    if (textarea) {
-      textarea.scrollTop = scrollTop;
-    }
+  // requestAnimationFrameで次のフレームで復元（DOMが完全に構築された後）
+  window.requestAnimationFrame(() => {
+    scrollPositions.forEach((scrollTop, fileId) => {
+      const textarea = document.querySelector(
+        `.file-content-textarea[data-file-id="${fileId}"]`
+      ) as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.scrollTop = scrollTop;
+        console.log(`[render] 復元 scrollTop for ${fileId}: ${scrollTop} (実際: ${textarea.scrollTop})`);
+      } else {
+        console.log(`[render] 復元失敗 textarea not found for ${fileId}`);
+      }
+    });
   });
 
   // フォーカスとカーソル位置を復元
