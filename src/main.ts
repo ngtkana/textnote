@@ -90,7 +90,16 @@ async function init() {
 
         // ログイン時、クラウドから同期
         try {
-          await syncService.syncFromCloud();
+          const synced = await syncService.syncFromCloud();
+
+          // クラウドが空だった場合、ローカルをアップロード
+          if (!synced) {
+            const localFiles = await fileService.getAllFiles();
+            if (localFiles.length > 0) {
+              await syncService.syncToCloud();
+            }
+          }
+
           currentFiles = await fileService.getAllFiles();
         } catch (error) {
           console.error('クラウド同期エラー:', error);
@@ -505,6 +514,11 @@ function setupEventListeners() {
     e.stopPropagation();
     isMenuOpen = !isMenuOpen;
     render();
+  });
+
+  // メニュー内クリックの伝播を止める
+  document.getElementById('dropdown-menu')?.addEventListener('click', (e) => {
+    e.stopPropagation();
   });
 
   // メニュー外クリックで閉じる

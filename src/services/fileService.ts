@@ -177,6 +177,16 @@ export class FileService {
     for (const file of files) {
       await storage.createFile(file);
     }
+
+    // ログイン中の場合、クラウドも置き換える
+    if (auth.currentUser) {
+      try {
+        await syncService.clearCloud();
+        await syncService.syncToCloud();
+      } catch (error) {
+        console.error('クラウド同期エラー（importData）:', error);
+      }
+    }
   }
 }
 
