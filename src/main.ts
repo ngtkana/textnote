@@ -225,12 +225,20 @@ async function init() {
 function render() {
   const app = document.querySelector<HTMLDivElement>('#app')!;
 
-  // 現在フォーカス中の要素とスクロール位置を保存
+  // 全てのtextareaのスクロール位置を保存
+  const scrollPositions = new Map<string, number>();
+  document.querySelectorAll('.file-content-textarea').forEach((textarea) => {
+    const fileId = (textarea as HTMLTextAreaElement).dataset.fileId;
+    if (fileId) {
+      scrollPositions.set(fileId, (textarea as HTMLTextAreaElement).scrollTop);
+    }
+  });
+
+  // 現在フォーカス中の要素を保存
   const activeElement = document.activeElement as HTMLElement;
   const activeFileId = activeElement?.dataset?.fileId;
   const isTextarea = activeElement?.classList?.contains('file-content-textarea');
   const isTitleInput = activeElement?.classList?.contains('file-title-input');
-  const scrollTop = isTextarea ? (activeElement as HTMLTextAreaElement).scrollTop : 0;
   const selectionStart = (activeElement as HTMLTextAreaElement)?.selectionStart || 0;
   const selectionEnd = (activeElement as HTMLTextAreaElement)?.selectionEnd || 0;
 
@@ -254,7 +262,17 @@ function render() {
     },
   });
 
-  // フォーカスとスクロール位置を復元
+  // 全てのtextareaのスクロール位置を復元
+  scrollPositions.forEach((scrollTop, fileId) => {
+    const textarea = document.querySelector(
+      `.file-content-textarea[data-file-id="${fileId}"]`
+    ) as HTMLTextAreaElement;
+    if (textarea) {
+      textarea.scrollTop = scrollTop;
+    }
+  });
+
+  // フォーカスとカーソル位置を復元
   if (activeFileId && (isTextarea || isTitleInput)) {
     const selector = isTextarea
       ? `.file-content-textarea[data-file-id="${activeFileId}"]`
@@ -264,10 +282,6 @@ function render() {
       element.focus();
       // カーソル位置を復元
       element.setSelectionRange(selectionStart, selectionEnd);
-      // スクロール位置を復元（textareaの場合のみ）
-      if (isTextarea) {
-        (element as HTMLTextAreaElement).scrollTop = scrollTop;
-      }
     }
   }
 
